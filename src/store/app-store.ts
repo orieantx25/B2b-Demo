@@ -47,6 +47,7 @@ interface Store extends ReturnType<typeof buildInitial> {
     meetingId: string,
     payload: { photoUrl: string; geo: { lat: number; lng: number; label?: string; capturedAt: string } }
   ) => void;
+  linkMeetingToConsultant: (meetingId: string, consultantId: string) => void;
   rescheduleMeeting: (id: string, date: string, time: string) => void;
   createEvent: (input: Omit<EventItem, "id" | "createdAt" | "ownerId">) => void;
   createConsultant: (input: {
@@ -188,8 +189,42 @@ export const useAppStore = create<Store>()(
       ),
     }));
     get().addToast({
-      title: "Geotag photo attached",
+      title: "Field photo attached",
       description: payload.geo.label || `${payload.geo.lat}, ${payload.geo.lng}`,
+      variant: "success",
+    });
+  },
+
+  linkMeetingToConsultant: (meetingId, consultantId) => {
+    const c = get().consultants.find((x) => x.id === consultantId);
+    if (!c) return;
+    set((s) => ({
+      meetings: s.meetings.map((m) =>
+        m.id === meetingId
+          ? {
+              ...m,
+              consultantId: c.id,
+              consultantName: c.name,
+              phone: m.phone || c.phone,
+              email: m.email || c.email,
+              organization: m.organization || c.organization,
+            }
+          : m
+      ),
+      consultants: s.consultants.map((x) =>
+        x.id === consultantId && !x.firstMeetingId
+          ? {
+              ...x,
+              firstMeetingId: meetingId,
+              firstMeetingDate: s.meetings.find((m) => m.id === meetingId)?.date || x.firstMeetingDate,
+              updatedAt: new Date().toISOString(),
+            }
+          : x
+      ),
+    }));
+    get().addToast({
+      title: "Meeting linked",
+      description: `Connected to ${c.name}`,
       variant: "success",
     });
   },
@@ -237,12 +272,15 @@ export const useAppStore = create<Store>()(
     }
     const owner = get().members.find((m) => m.id === get().currentUserId)!;
     const code = `CNS-${10000 + get().consultants.length + 1}`;
+    const phone = (input.phone || "").trim();
+    const email = (input.email || "").trim();
+    const incompleteProfile = phone.length < 8;
     const consultant: Consultant = {
       id: uid("cns"),
       name: input.name,
       organization: input.organization || input.name,
-      phone: input.phone,
-      email: input.email,
+      phone: phone || "—",
+      email: email || "—",
       ownerId: owner.id,
       region: input.region || owner.region,
       consultantCode: code,
@@ -254,6 +292,7 @@ export const useAppStore = create<Store>()(
       leadsCount: 0,
       testTakersCount: 0,
       admissionsCount: 0,
+      incompleteProfile,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -729,7 +768,7 @@ export const useAppStore = create<Store>()(
 
   applyCardxExtract: (data) => {
     get().addToast({
-      title: "CardX extraction complete",
+      title: "Scan complete",
       description: "OCR assists only — Operations verifies",
     });
     return data.name;

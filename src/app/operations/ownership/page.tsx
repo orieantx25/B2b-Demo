@@ -68,7 +68,31 @@ export default function OwnershipPage() {
         </ul>
       </section>
 
-      <div className="overflow-x-auto card-surface">
+      <div className="space-y-2 sm:hidden">
+        {ownership.slice(0, 60).map((o) => {
+          const c = consultants.find((x) => x.id === o.consultantId);
+          return (
+            <Link
+              key={o.id}
+              href={`/consultants/${o.consultantId}`}
+              className="block card-surface p-3.5"
+            >
+              <div className="text-sm font-semibold">{c?.name}</div>
+              <div className="mt-0.5 text-xs text-[#6b6b6b]">
+                {o.ownerName}
+                {o.toDate ? "" : " · current"}
+              </div>
+              <div className="mt-2 text-xs text-[#6b6b6b]">
+                {formatDate(o.fromDate)}
+                {o.toDate ? ` → ${formatDate(o.toDate)}` : ""}
+                {o.reason ? ` · ${o.reason}` : ""}
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+
+      <div className="hidden overflow-x-auto card-surface sm:block">
         <table className="w-full text-left text-sm">
           <thead className="bg-[#f6f6f6] text-xs text-[#6b6b6b]">
             <tr>

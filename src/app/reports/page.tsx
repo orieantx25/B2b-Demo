@@ -2,8 +2,6 @@
 
 import { useMemo } from "react";
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -17,8 +15,9 @@ import {
   YAxis,
 } from "recharts";
 import { useAppStore } from "@/store/app-store";
-import { Kpi, KpiSection, PageHeader } from "@/components/ui";
+import { Kpi, KpiSection, PageHeader, SourceTag } from "@/components/ui";
 import { ChartCard, ChartEmpty, SERIES, chartColors, chartTooltipStyle } from "@/components/report-charts";
+import { ReportNav } from "@/components/report-nav";
 
 export default function ReportsOverview() {
   const meetings = useAppStore((s) => s.meetings);
@@ -28,18 +27,24 @@ export default function ReportsOverview() {
   const testTakers = useAppStore((s) => s.testTakers);
   const admissions = useAppStore((s) => s.admissions);
 
-  const funnel = useMemo(
+  const lifecycleFunnel = useMemo(
     () => [
       { stage: "Meetings", value: meetings.length },
       { stage: "Consultants", value: consultants.length },
       { stage: "MOU requested", value: mous.length },
       { stage: "MOU signed", value: mous.filter((m) => m.status === "Signed").length },
       { stage: "Active", value: consultants.filter((c) => c.status === "Active").length },
+    ],
+    [meetings, consultants, mous]
+  );
+
+  const commercialFunnel = useMemo(
+    () => [
       { stage: "Leads", value: leads.length },
       { stage: "Test takers", value: testTakers.length },
       { stage: "Admissions", value: admissions.length },
     ],
-    [meetings, consultants, mous, leads, testTakers, admissions]
+    [leads, testTakers, admissions]
   );
 
   const statusMix = useMemo(() => {
@@ -89,9 +94,10 @@ export default function ReportsOverview() {
         title="Executive Overview"
         subtitle="uGSOT B2B Operations — consultant lifecycle at a glance."
       />
+      <ReportNav />
       <KpiSection title="Lifecycle snapshot">
-        <Kpi label="Meetings" value={meetings.length} tone="blue" />
-        <Kpi label="Consultants" value={consultants.length} tone="violet" />
+        <Kpi label="Meetings" value={meetings.length} tone="blue" href="/reports/b2b" />
+        <Kpi label="Consultants" value={consultants.length} tone="violet" href="/reports/consultants" />
         <Kpi
           label="Active"
           value={active}
@@ -101,14 +107,16 @@ export default function ReportsOverview() {
               ? `${Math.round((active / consultants.length) * 100)}% of consultants`
               : undefined
           }
+          href="/reports/consultants"
         />
         <Kpi
           label="MOU Signed"
           value={mouSigned}
           tone="amber"
           hint={mous.length ? `${Math.round((mouSigned / mous.length) * 100)}% of MOUs` : undefined}
+          href="/reports/mou"
         />
-        <Kpi label="Leads" value={leads.length} tone="blue" />
+        <Kpi label="Leads" value={leads.length} tone="blue" href="/reports/b2b" />
         <Kpi
           label="Admissions"
           value={admissions.length}
@@ -118,21 +126,26 @@ export default function ReportsOverview() {
               ? `${Math.round((admissions.length / leads.length) * 100)}% of leads`
               : undefined
           }
+          href="/reports/b2b"
         />
       </KpiSection>
 
       <div className="grid gap-4 lg:grid-cols-5">
         <ChartCard
-          title="Consultant funnel"
-          subtitle="Volume at each lifecycle stage"
+          title="Lifecycle funnel"
+          subtitle="Meeting → Active"
           className="lg:col-span-3"
         >
-          {funnel.every((f) => f.value === 0) ? (
+          {lifecycleFunnel.every((f) => f.value === 0) ? (
             <ChartEmpty />
           ) : (
             <div className="h-72 sm:h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={funnel} layout="vertical" margin={{ left: 8, right: 12, top: 4, bottom: 4 }}>
+                <BarChart
+                  data={lifecycleFunnel}
+                  layout="vertical"
+                  margin={{ left: 8, right: 12, top: 4, bottom: 4 }}
+                >
                   <CartesianGrid stroke={chartColors.border} strokeDasharray="3 3" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 11, fill: chartColors.muted }} />
                   <YAxis
@@ -180,6 +193,54 @@ export default function ReportsOverview() {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <ChartCard title="Commercial funnel" subtitle="Leads → Admissions">
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={commercialFunnel}
+                layout="vertical"
+                margin={{ left: 8, right: 12, top: 4, bottom: 4 }}
+              >
+                <CartesianGrid stroke={chartColors.border} strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11, fill: chartColors.muted }} />
+                <YAxis
+                  type="category"
+                  dataKey="stage"
+                  width={80}
+                  tick={{ fontSize: 11, fill: chartColors.muted }}
+                />
+                <Tooltip contentStyle={chartTooltipStyle()} />
+                <Bar dataKey="value" name="Count" radius={[0, 6, 6, 0]} fill={chartColors.black} barSize={20} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </ChartCard>
+
+        <ChartCard title="Conversion rates" subtitle="Stage-to-stage efficiency (%)">
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={conversion}
+                layout="vertical"
+                margin={{ left: 8, right: 12, top: 4, bottom: 4 }}
+              >
+                <CartesianGrid stroke={chartColors.border} strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11, fill: chartColors.muted }} unit="%" />
+                <YAxis
+                  type="category"
+                  dataKey="label"
+                  width={130}
+                  tick={{ fontSize: 10, fill: chartColors.muted }}
+                />
+                <Tooltip contentStyle={chartTooltipStyle()} formatter={(v: number) => [`${v}%`, "Rate"]} />
+                <Bar dataKey="rate" name="Conversion %" radius={[0, 6, 6, 0]} fill={chartColors.red} barSize={16} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </ChartCard>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <ChartCard title="Consultants by region" subtitle="Top regions in the portfolio">
           {regionMix.length === 0 ? (
             <ChartEmpty />
@@ -188,7 +249,14 @@ export default function ReportsOverview() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={regionMix} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
                   <CartesianGrid stroke={chartColors.border} strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="region" tick={{ fontSize: 10, fill: chartColors.muted }} interval={0} angle={-20} textAnchor="end" height={56} />
+                  <XAxis
+                    dataKey="region"
+                    tick={{ fontSize: 10, fill: chartColors.muted }}
+                    interval={0}
+                    angle={-20}
+                    textAnchor="end"
+                    height={56}
+                  />
                   <YAxis tick={{ fontSize: 11, fill: chartColors.muted }} allowDecimals={false} />
                   <Tooltip contentStyle={chartTooltipStyle()} />
                   <Bar dataKey="consultants" name="Consultants" fill={chartColors.black} radius={[6, 6, 0, 0]} />
@@ -198,49 +266,18 @@ export default function ReportsOverview() {
           )}
         </ChartCard>
 
-        <ChartCard title="Conversion rates" subtitle="Stage-to-stage efficiency (%)">
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={conversion} margin={{ left: 0, right: 8, top: 8, bottom: 40 }}>
-                <defs>
-                  <linearGradient id="convFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={chartColors.red} stopOpacity={0.35} />
-                    <stop offset="100%" stopColor={chartColors.red} stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke={chartColors.border} strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 9, fill: chartColors.muted }}
-                  interval={0}
-                  angle={-18}
-                  textAnchor="end"
-                  height={60}
-                />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: chartColors.muted }} unit="%" />
-                <Tooltip contentStyle={chartTooltipStyle()} formatter={(v: number) => [`${v}%`, "Rate"]} />
-                <Area
-                  type="monotone"
-                  dataKey="rate"
-                  name="Conversion %"
-                  stroke={chartColors.red}
-                  strokeWidth={2}
-                  fill="url(#convFill)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+        <div className="card-surface flex flex-col justify-center gap-3 p-5">
+          <div className="text-sm font-semibold text-[#111111]">Synced systems</div>
+          <p className="text-xs text-[#6b6b6b]">
+            Downstream volumes are mirrored from existing systems — not owned here.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <SourceTag>Lead System · {leads.length}</SourceTag>
+            <SourceTag>Exam System · {testTakers.length}</SourceTag>
+            <SourceTag>Admission System · {admissions.length}</SourceTag>
           </div>
-        </ChartCard>
+        </div>
       </div>
-
-      <KpiSection title="Downstream systems" className="mt-6">
-        <Kpi label="Test takers" value={testTakers.length} hint="Synced from Existing Exam System" tone="blue" />
-        <Kpi label="Admissions" value={admissions.length} hint="Synced from Existing Admission System" tone="red" />
-        <Kpi label="Leads" value={leads.length} hint="Synced from Existing Lead System" tone="violet" />
-        <Kpi label="Active consultants" value={active} tone="green" />
-        <Kpi label="MOU signed" value={mouSigned} tone="amber" />
-        <Kpi label="Meetings" value={meetings.length} tone="blue" />
-      </KpiSection>
     </div>
   );
 }

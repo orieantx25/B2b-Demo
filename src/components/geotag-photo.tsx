@@ -63,11 +63,11 @@ export function GeotagPhotoField({
 
   return (
     <div className={cn("space-y-2", compact && "space-y-1.5")}>
-      {!compact && <Label>Geotag photo</Label>}
+      {!compact && <Label>Field photo</Label>}
       {photoUrl && geo ? (
         <div className="relative overflow-hidden rounded-[12px] border border-[#e5e5e5] bg-[#111111]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={photoUrl} alt="Meeting geotag" className="h-36 w-full object-cover sm:h-44" />
+          <img src={photoUrl} alt="Meeting field photo" className="h-36 w-full object-cover sm:h-44" />
           <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/80 to-transparent px-3 py-2.5 text-white">
             <div className="flex min-w-0 items-center gap-1.5 text-[11px]">
               <MapPin className="h-3.5 w-3.5 shrink-0 text-[#e31c24]" />
@@ -84,7 +84,7 @@ export function GeotagPhotoField({
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap gap-2">
+        <div className="space-y-2">
           <Button
             type="button"
             size="sm"
@@ -93,11 +93,16 @@ export function GeotagPhotoField({
             onClick={() => inputRef.current?.click()}
           >
             <Camera className="h-4 w-4" />
-            {busy ? "Capturing…" : "Add geotag photo"}
+            {busy ? "Capturing…" : "Add field photo"}
           </Button>
-          <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={useDemo}>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={useDemo}
+            className="block text-xs font-medium text-[#6b6b6b] underline-offset-2 hover:text-[#111111] hover:underline disabled:opacity-50"
+          >
             Use demo photo
-          </Button>
+          </button>
         </div>
       )}
       <input

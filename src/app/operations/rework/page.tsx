@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useAppStore } from "@/store/app-store";
-import { PageHeader } from "@/components/ui";
+import { Badge, EmptyState, PageHeader } from "@/components/ui";
 
 export default function ReworkPage() {
   const mous = useAppStore((s) => s.mous);
@@ -12,23 +12,37 @@ export default function ReworkPage() {
 
   return (
     <div className="animate-in pb-16">
-      <PageHeader title="Rework" subtitle="B2B sees Action Required until corrected docs return." />
-      <div className="space-y-3">
-        {rows.map((m) => {
-          const c = consultants.find((x) => x.id === m.consultantId);
-          return (
-            <div key={m.id} className="border border-amber-200 bg-amber-50 p-4">
-              <div className="font-semibold">{c?.name}</div>
-              <div className="mt-1 text-sm">{m.reworkMessage}</div>
-              <div className="mt-1 text-xs">Items: {(m.reworkItems || []).join(", ")}</div>
-              <Link href={`/operations/verification?id=${m.id}`} className="mt-2 inline-block text-xs underline">
-                Open in verification
+      <PageHeader
+        title={`Rework (${rows.length})`}
+        subtitle="B2B sees Action required until corrected docs return."
+      />
+      {rows.length === 0 ? (
+        <EmptyState title="No rework items" description="Queue is clear for rework." />
+      ) : (
+        <div className="space-y-2">
+          {rows.map((m) => {
+            const c = consultants.find((x) => x.id === m.consultantId);
+            return (
+              <Link
+                key={m.id}
+                href={`/operations/verification?id=${m.id}`}
+                className="block card-surface border-[#f0d2ad] bg-[#fff4e8]/60 p-3.5"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold">{c?.name}</div>
+                    <div className="mt-1 text-sm text-[#111111]">{m.reworkMessage}</div>
+                    <div className="mt-1 text-xs text-[#6b6b6b]">
+                      Items: {(m.reworkItems || []).join(", ")}
+                    </div>
+                  </div>
+                  <Badge tone="warn">Action required</Badge>
+                </div>
               </Link>
-            </div>
-          );
-        })}
-        {rows.length === 0 && <p className="text-sm text-[#6b6b6b]">No rework items.</p>}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

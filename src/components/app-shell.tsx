@@ -28,6 +28,7 @@ import {
   IdCard,
   Camera,
   CalendarPlus,
+  X,
 } from "lucide-react";
 import { ReactNode, useEffect, useState } from "react";
 
@@ -90,7 +91,9 @@ function flatOps(): NavItem[] {
 }
 
 function isNavActive(pathname: string, href: string) {
-  if (href === "/b2b") return pathname === "/b2b";
+  if (href === "/b2b" || href === "/operations" || href === "/reports") {
+    return pathname === href;
+  }
   if (href === "/b2b/consultants") {
     return pathname.startsWith("/b2b/consultants") || pathname.startsWith("/consultants/");
   }
@@ -330,8 +333,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               <IdCard className="h-5 w-5" />
             </span>
             <span>
-              <span className="block text-sm font-semibold">Scan visiting card</span>
-              <span className="text-xs text-[#6b6b6b]">CardX OCR assist</span>
+              <span className="block text-sm font-semibold">Scan card</span>
+              <span className="text-xs text-[#6b6b6b]">Visiting card OCR assist</span>
             </span>
           </button>
           <button
@@ -356,8 +359,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Camera className="h-5 w-5" />
             </span>
             <span>
-              <span className="block text-sm font-semibold">Add geotag photo</span>
-              <span className="text-xs text-[#6b6b6b]">Attach to a meeting</span>
+              <span className="block text-sm font-semibold">Add field photo</span>
+              <span className="text-xs text-[#6b6b6b]">Geotagged meeting evidence</span>
             </span>
           </button>
         </div>
@@ -403,21 +406,26 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
 
-      <div className="fixed bottom-24 right-3 z-50 flex w-[min(20rem,calc(100vw-1.5rem))] flex-col gap-2 sm:bottom-4 sm:right-4 lg:bottom-4">
+      <div className="fixed bottom-[5.75rem] right-3 z-50 flex w-[min(20rem,calc(100vw-5.5rem))] flex-col gap-2 sm:bottom-4 sm:right-4 lg:bottom-4 lg:right-4 lg:w-[min(20rem,calc(100vw-2rem))]">
         {toasts.map((t) => (
           <div
             key={t.id}
-            className="card-surface cursor-pointer px-3.5 py-2.5"
-            onClick={() => dismissToast(t.id)}
+            className="card-surface flex items-start gap-2 px-3.5 py-2.5"
             role="status"
           >
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-sm font-semibold">{t.title}</div>
-                {t.description && <div className="text-xs text-[#6b6b6b]">{t.description}</div>}
-              </div>
-              {t.variant === "success" && <Badge tone="success">Done</Badge>}
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold">{t.title}</div>
+              {t.description && <div className="text-xs text-[#6b6b6b]">{t.description}</div>}
             </div>
+            {t.variant === "success" && <Badge tone="success">Done</Badge>}
+            <button
+              type="button"
+              aria-label="Dismiss"
+              className="shrink-0 rounded-md p-1 text-[#6b6b6b] hover:bg-[#f0f0f0]"
+              onClick={() => dismissToast(t.id)}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
         ))}
       </div>
@@ -426,10 +434,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         <button
           type="button"
           onClick={() => setCaptureOpen(true)}
-          className="fixed bottom-[4.75rem] right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[#e31c24] text-white shadow-[0_8px_24px_rgba(227,28,36,0.35)] transition duration-150 hover:bg-[#c41820] active:scale-95 lg:hidden"
-          aria-label="Quick capture"
+          className="fixed bottom-[4.75rem] right-4 z-40 flex items-center gap-1.5 rounded-full bg-[#e31c24] py-3.5 pl-3.5 pr-4 text-white shadow-[0_8px_24px_rgba(227,28,36,0.35)] transition duration-150 hover:bg-[#c41820] active:scale-95 lg:hidden"
+          aria-label="Capture"
         >
-          <Plus className="h-6 w-6" />
+          <Plus className="h-5 w-5" />
+          <span className="text-xs font-bold tracking-wide">Capture</span>
         </button>
       )}
 

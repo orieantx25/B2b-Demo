@@ -67,14 +67,18 @@ function B2BOverviewInner() {
     .slice(0, 4);
 
   const onCardx = (data: CardxExtract) => {
-    createConsultant({
+    const { consultant, duplicates } = createConsultant({
       name: data.name,
       organization: data.organization,
       phone: data.phone,
       email: data.email,
       region: user?.region || "NCR",
     });
-    router.push("/b2b/consultants");
+    if (duplicates.length) {
+      router.push(`/consultants/${duplicates[0]!.id}`);
+      return;
+    }
+    router.push(`/consultants/${consultant.id}`);
   };
 
   return (
@@ -106,7 +110,7 @@ function B2BOverviewInner() {
             </span>
           </Link>
           <Link
-            href="/b2b/meetings"
+            href="/b2b/meetings?today=1"
             className="group flex min-h-[5.5rem] flex-col items-start justify-between rounded-[16px] border border-[#e5e5e5] bg-white p-3.5 text-left shadow-[0_1px_2px_rgba(17,17,17,0.04)] transition duration-150 active:scale-[0.98]"
           >
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eff6ff] text-[#1d4ed8]">
@@ -183,7 +187,7 @@ function B2BOverviewInner() {
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold">{m.consultantName}</div>
                   <div className="text-xs text-[#6b6b6b]">
-                    Add geotag photo · {formatDate(m.date)}
+                    Add field photo · {formatDate(m.date)}
                   </div>
                 </div>
                 <ChevronRight className="h-4 w-4 text-[#6b6b6b]" />
@@ -206,10 +210,38 @@ function B2BOverviewInner() {
             )}
             {upcoming.map((m) => (
               <li key={m.id} className="px-4 py-3">
-                <div className="text-sm font-semibold text-[#111111]">{m.consultantName}</div>
-                <div className="mt-0.5 text-xs text-[#6b6b6b]">
-                  {formatDate(m.date)} · {m.time} · {m.type}
-                  {m.photoUrl ? " · 📷" : ""}
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    {m.consultantId ? (
+                      <Link
+                        href={`/consultants/${m.consultantId}`}
+                        className="text-sm font-semibold text-[#111111] hover:text-[#e31c24]"
+                      >
+                        {m.consultantName}
+                      </Link>
+                    ) : (
+                      <div className="text-sm font-semibold text-[#111111]">{m.consultantName}</div>
+                    )}
+                    <div className="mt-0.5 text-xs text-[#6b6b6b]">
+                      {formatDate(m.date)} · {m.time} · {m.type}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {!m.photoUrl && (
+                      <Link
+                        href={`/b2b/meetings?photo=${m.id}`}
+                        className="text-xs font-semibold text-[#b45309] underline-offset-2 hover:underline"
+                      >
+                        Add field photo
+                      </Link>
+                    )}
+                    <Link
+                      href="/b2b/meetings"
+                      className="text-xs font-semibold text-[#6b6b6b] underline-offset-2 hover:underline"
+                    >
+                      Open
+                    </Link>
+                  </div>
                 </div>
               </li>
             ))}
@@ -236,7 +268,7 @@ function B2BOverviewInner() {
           actions={
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => setCardxOpen(true)}>
-                Scan visiting card
+                Scan card
               </Button>
               <Link href="/b2b/meetings?schedule=1">
                 <Button>
@@ -279,6 +311,51 @@ function B2BOverviewInner() {
           />
         </KpiSection>
 
+        <Panel title="Needs you" className="mt-2 mb-3">
+          <ul className="divide-y divide-[#e5e5e5]">
+            {pendingMous.length === 0 && needsPhoto.length === 0 && (
+              <li className="px-4 py-6 text-sm text-[#6b6b6b]">All clear — nothing urgent</li>
+            )}
+            {pendingMous.map((m) => {
+              const c = consultants.find((x) => x.id === m.consultantId);
+              return (
+                <li key={m.id}>
+                  <Link
+                    href={`/consultants/${m.consultantId}`}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-[#fafafa]"
+                  >
+                    <AlertCircle className="h-4 w-4 shrink-0 text-[#e31c24]" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold">{c?.name}</div>
+                      <div className="truncate text-xs text-[#6b6b6b]">{m.reworkMessage || m.status}</div>
+                    </div>
+                    <Badge tone={StatusTone(m.status)}>
+                      {m.status === "Rework" ? "Rework" : m.status}
+                    </Badge>
+                  </Link>
+                </li>
+              );
+            })}
+            {needsPhoto.map((m) => (
+              <li key={m.id}>
+                <Link
+                  href={`/b2b/meetings?photo=${m.id}`}
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#fafafa]"
+                >
+                  <Camera className="h-4 w-4 shrink-0 text-[#b45309]" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold">{m.consultantName}</div>
+                    <div className="text-xs text-[#6b6b6b]">
+                      Add field photo · {formatDate(m.date)}
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-[#6b6b6b]" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+
         <div className="mt-2 grid gap-3 lg:grid-cols-3">
           <Panel
             title="Upcoming meetings"
@@ -294,16 +371,37 @@ function B2BOverviewInner() {
               )}
               {upcoming.map((m) => (
                 <li key={m.id} className="px-4 py-3 hover:bg-[#fafafa]">
-                  <div className="text-sm font-semibold text-[#111111]">{m.consultantName}</div>
-                  <div className="mt-0.5 text-xs text-[#6b6b6b]">
-                    {formatDate(m.date)} · {m.time} · {m.type}
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      {m.consultantId ? (
+                        <Link
+                          href={`/consultants/${m.consultantId}`}
+                          className="text-sm font-semibold text-[#111111] hover:text-[#e31c24]"
+                        >
+                          {m.consultantName}
+                        </Link>
+                      ) : (
+                        <div className="text-sm font-semibold text-[#111111]">{m.consultantName}</div>
+                      )}
+                      <div className="mt-0.5 text-xs text-[#6b6b6b]">
+                        {formatDate(m.date)} · {m.time} · {m.type}
+                      </div>
+                    </div>
+                    {!m.photoUrl && (
+                      <Link
+                        href={`/b2b/meetings?photo=${m.id}`}
+                        className="text-xs font-semibold text-[#b45309] underline-offset-2 hover:underline"
+                      >
+                        Add field photo
+                      </Link>
+                    )}
                   </div>
                 </li>
               ))}
             </ul>
           </Panel>
 
-          <Panel title="Pending actions">
+          <Panel title="Pending MOUs">
             <ul className="divide-y divide-[#e5e5e5]">
               {pendingMous.length === 0 && (
                 <li className="px-4 py-6 text-sm text-[#6b6b6b]">All clear</li>

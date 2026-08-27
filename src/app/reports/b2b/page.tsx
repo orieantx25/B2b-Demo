@@ -14,6 +14,7 @@ import {
 import { useAppStore } from "@/store/app-store";
 import { Input, Kpi, KpiSection, Label, PageHeader, Select } from "@/components/ui";
 import { ChartCard, ChartEmpty, chartColors, chartTooltipStyle } from "@/components/report-charts";
+import { ReportNav } from "@/components/report-nav";
 
 export default function B2BPerfReport() {
   const members = useAppStore((s) => s.members);
@@ -63,6 +64,7 @@ export default function B2BPerfReport() {
   return (
     <div className="animate-in pb-16">
       <PageHeader title="B2B Performance" subtitle="Filter by region and member — compare field productivity." />
+      <ReportNav />
       <div className="mb-4 flex flex-wrap gap-3">
         <div>
           <Label>Region</Label>
@@ -153,7 +155,21 @@ export default function B2BPerfReport() {
         </ChartCard>
       </div>
 
-      <div className="overflow-x-auto card-surface">
+      <div className="space-y-2 sm:hidden">
+        {rows.map((r) => (
+          <div key={r.fullName} className="card-surface p-3.5">
+            <div className="text-sm font-semibold">{r.fullName}</div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-[#6b6b6b]">
+              <div>Meetings · <strong className="text-[#111111]">{r.meetings}</strong></div>
+              <div>Consultants · <strong className="text-[#111111]">{r.consultants}</strong></div>
+              <div>Active · <strong className="text-[#111111]">{r.active}</strong></div>
+              <div>Leads · <strong className="text-[#111111]">{r.leads}</strong></div>
+              <div>Admissions · <strong className="text-[#111111]">{r.admissions}</strong></div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="hidden overflow-x-auto card-surface sm:block">
         <table className="w-full min-w-[700px] text-left text-sm">
           <thead className="bg-[#f6f6f6] text-xs text-[#6b6b6b]">
             <tr>

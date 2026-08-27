@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useAppStore } from "@/store/app-store";
-import { Button, Modal } from "@/components/ui";
+import { Button, Input, Label, Modal } from "@/components/ui";
 import { IdCard, Loader2, ScanLine } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -50,7 +50,6 @@ export function CardxUpload({
 
   const processFile = (file: File | null) => {
     if (!file) {
-      // demo path without a real file
       setBusy(true);
       setTimeout(() => {
         const data: CardxExtract = {
@@ -85,6 +84,7 @@ export function CardxUpload({
 
   const confirm = () => {
     if (!extracted) return;
+    if (extracted.phone.trim().length < 8 && mode === "create") return;
     if (mode === "attach" && consultantId) {
       uploadDocument(consultantId, "Visiting Card");
       onExtracted?.(extracted);
@@ -96,9 +96,9 @@ export function CardxUpload({
   };
 
   return (
-    <Modal open={open} onClose={handleClose} title="CardX / OCR — Visiting card">
+    <Modal open={open} onClose={handleClose} title="Scan card">
       <p className="mb-3 text-xs text-[#6b6b6b]">
-        Simulates CardX. OCR assists — does not approve. Operations verifies.
+        OCR assists capture — Operations still verifies. Does not approve. Edit fields before confirming.
       </p>
       {!extracted ? (
         <div className="space-y-3">
@@ -120,7 +120,7 @@ export function CardxUpload({
               <IdCard className="h-8 w-8 text-[#e31c24]" />
             )}
             <div className="text-sm font-semibold text-[#111111]">
-              {busy ? "Processing with CardX…" : preview ? "Processing…" : "Tap to capture or upload"}
+              {busy ? "Scanning…" : preview ? "Processing…" : "Tap to capture or upload"}
             </div>
             <div className="text-xs text-[#6b6b6b]">Camera or gallery · image only</div>
           </button>
@@ -132,30 +132,73 @@ export function CardxUpload({
             className="hidden"
             onChange={(e) => processFile(e.target.files?.[0] || null)}
           />
-          <Button variant="outline" className="w-full" disabled={busy} onClick={() => processFile(null)}>
-            <ScanLine className="h-4 w-4" />
-            Use demo card image
-          </Button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => processFile(null)}
+            className="flex w-full items-center justify-center gap-1.5 text-xs font-medium text-[#6b6b6b] underline-offset-2 hover:text-[#111111] hover:underline disabled:opacity-50"
+          >
+            <ScanLine className="h-3.5 w-3.5" />
+            Use demo card
+          </button>
         </div>
       ) : (
-        <div className="space-y-2 text-sm">
+        <div className="space-y-3">
           {preview && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={preview}
               alt="Scanned card"
-              className="mb-2 max-h-28 w-full rounded-lg object-contain bg-[#f6f6f6]"
+              className="mb-1 max-h-28 w-full rounded-lg object-contain bg-[#f6f6f6]"
             />
           )}
-          <div>
-            Name: <strong>{extracted.name}</strong>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <Label htmlFor="cardx-name">Full name *</Label>
+              <Input
+                id="cardx-name"
+                value={extracted.name}
+                onChange={(e) => setExtracted({ ...extracted, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="cardx-phone">Phone *</Label>
+              <Input
+                id="cardx-phone"
+                value={extracted.phone}
+                onChange={(e) => setExtracted({ ...extracted, phone: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="cardx-email">Email</Label>
+              <Input
+                id="cardx-email"
+                value={extracted.email}
+                onChange={(e) => setExtracted({ ...extracted, email: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="cardx-org">Organization</Label>
+              <Input
+                id="cardx-org"
+                value={extracted.organization}
+                onChange={(e) => setExtracted({ ...extracted, organization: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="cardx-desig">Designation</Label>
+              <Input
+                id="cardx-desig"
+                value={extracted.designation}
+                onChange={(e) => setExtracted({ ...extracted, designation: e.target.value })}
+              />
+            </div>
           </div>
-          <div>Phone: {extracted.phone}</div>
-          <div>Email: {extracted.email}</div>
-          <div>Organization: {extracted.organization}</div>
-          <div>Designation: {extracted.designation}</div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button onClick={confirm}>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              disabled={!extracted.name.trim() || (mode === "create" && extracted.phone.trim().length < 8)}
+              onClick={confirm}
+            >
               {mode === "attach" ? "Attach to consultant" : "Confirm & continue"}
             </Button>
             <Button
@@ -189,7 +232,7 @@ export function CardxActionTile({ onClick, className }: { onClick: () => void; c
       </span>
       <span>
         <span className="block text-sm font-semibold text-[#111111]">Scan card</span>
-        <span className="text-[11px] text-[#6b6b6b]">CardX visiting card</span>
+        <span className="text-[11px] text-[#6b6b6b]">Visiting card</span>
       </span>
     </button>
   );

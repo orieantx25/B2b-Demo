@@ -19,6 +19,7 @@ import {
 import { useAppStore } from "@/store/app-store";
 import { Kpi, KpiSection, PageHeader } from "@/components/ui";
 import { ChartCard, ChartEmpty, SERIES, chartColors, chartTooltipStyle } from "@/components/report-charts";
+import { ReportNav } from "@/components/report-nav";
 import { daysBetween } from "@/lib/utils";
 
 export default function MouEfficiencyPage() {
@@ -96,6 +97,7 @@ export default function MouEfficiencyPage() {
   return (
     <div className="animate-in pb-16">
       <PageHeader title="MOU / WO Efficiency" subtitle="Standard slabs move faster — measure the gain." />
+      <ReportNav />
       <KpiSection title="Turnaround">
         <Kpi label="Avg MOU TAT (days)" value={stats.avg} tone="blue" />
         <Kpi label="Standard MOU TAT" value={stats.avgStd} tone="green" />

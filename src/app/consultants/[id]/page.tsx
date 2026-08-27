@@ -7,6 +7,7 @@ import { useAppStore } from "@/store/app-store";
 import {
   Badge,
   Button,
+  EmptyState,
   Input,
   Label,
   Modal,
@@ -18,23 +19,22 @@ import {
 import { ConsultantJourney, MouLifecycle } from "@/components/journey";
 import { MouRequestForm } from "@/components/mou-request-form";
 import { CardxUpload } from "@/components/cardx-upload";
-import { MeetingPhotoChip } from "@/components/geotag-photo";
+import { GeotagPhotoField, MeetingPhotoChip } from "@/components/geotag-photo";
 import { Sheet } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDate } from "@/lib/utils";
 import type { DocType } from "@/types";
-import { MoreHorizontal } from "lucide-react";
+import type { GeoTag } from "@/lib/geo";
+import { ArrowLeft, MoreHorizontal } from "lucide-react";
 
 const TAB_KEYS = [
   { value: "overview", label: "Overview" },
   { value: "journey", label: "Journey" },
   { value: "meetings", label: "Meetings" },
   { value: "mou", label: "MOU / WO" },
-  { value: "utms", label: "UTMs" },
-  { value: "coupons", label: "Coupons" },
+  { value: "growth", label: "UTMs & Coupons" },
   { value: "performance", label: "Performance" },
   { value: "documents", label: "Documents" },
-  { value: "ownership", label: "Ownership History" },
 ] as const;
 
 export default function Consultant360() {
@@ -60,6 +60,8 @@ export default function Consultant360() {
   const transferOwnership = useAppStore((s) => s.transferOwnership);
   const simulateFirstLead = useAppStore((s) => s.simulateFirstLead);
   const uploadDocument = useAppStore((s) => s.uploadDocument);
+  const completeMeeting = useAppStore((s) => s.completeMeeting);
+  const attachMeetingPhoto = useAppStore((s) => s.attachMeetingPhoto);
 
   const c = consultants.find((x) => x.id === id);
   const [tab, setTab] = useState<string>("overview");
@@ -73,6 +75,9 @@ export default function Consultant360() {
   const [couponCode, setCouponCode] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [cardxOpen, setCardxOpen] = useState(false);
+  const [photoMeetingId, setPhotoMeetingId] = useState<string | null>(null);
+  const [photoDraft, setPhotoDraft] = useState<{ photoUrl: string; geo: GeoTag } | null>(null);
+  const [completePromptId, setCompletePromptId] = useState<string | null>(null);
 
   const cMeetings = useMemo(() => meetings.filter((m) => m.consultantId === id), [meetings, id]);
   const cMous = useMemo(() => mous.filter((m) => m.consultantId === id), [mous, id]);
@@ -82,12 +87,15 @@ export default function Consultant360() {
   const cOwn = useMemo(() => ownership.filter((o) => o.consultantId === id), [ownership, id]);
   const owner = members.find((m) => m.id === c?.ownerId);
 
+  const reworkMou = cMous.find((m) => m.status === "Rework");
+  const primaryCtaLabel = reworkMou ? "Fix rework" : "Request MOU";
+
   if (!c) {
     return (
       <div className="p-8">
         <p>Consultant not found.</p>
         <Link href="/b2b/consultants" className="text-sm underline">
-          Back
+          Back to My Consultants
         </Link>
       </div>
     );
@@ -96,13 +104,41 @@ export default function Consultant360() {
   const completedMeetings = cMeetings.filter((m) => m.status === "Completed");
   const visitingCard = cDocs.find((d) => d.type === "Visiting Card");
 
+  const openPrimaryCta = () => {
+    if (reworkMou) {
+      setTab("documents");
+      setMouOpen(false);
+      return;
+    }
+    setMouOpen(true);
+    setMouStep("ask");
+  };
+
+  const tryComplete = (meetingId: string) => {
+    const m = meetings.find((x) => x.id === meetingId);
+    if (m && !m.photoUrl) {
+      setCompletePromptId(meetingId);
+      setPhotoDraft(null);
+      return;
+    }
+    completeMeeting(meetingId);
+  };
+
   return (
     <div className="animate-in pb-16">
       <div className="sticky top-12 z-20 mb-4 flex flex-col gap-3 rounded-[14px] border border-[#e5e5e5] bg-white/95 p-4 shadow-[0_1px_2px_rgba(17,17,17,0.04)] backdrop-blur-sm">
+        <Link
+          href="/b2b/consultants"
+          className="inline-flex w-fit items-center gap-1.5 text-xs font-semibold text-[#6b6b6b] hover:text-[#e31c24]"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          My Consultants
+        </Link>
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="section-title text-xl sm:text-2xl">{c.name}</h1>
             <Badge tone={StatusTone(c.status)}>{c.status}</Badge>
+            {c.incompleteProfile && <Badge tone="warn">Incomplete profile</Badge>}
           </div>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#6b6b6b] sm:text-sm">
             <span>Owner: {owner?.name}</span>
@@ -114,15 +150,8 @@ export default function Consultant360() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button
-            size="sm"
-            className="flex-1 sm:flex-none"
-            onClick={() => {
-              setMouOpen(true);
-              setMouStep("ask");
-            }}
-          >
-            Request MOU
+          <Button size="sm" className="flex-1 sm:flex-none" onClick={openPrimaryCta}>
+            {primaryCtaLabel}
           </Button>
           <Button size="sm" variant="outline" className="sm:hidden" onClick={() => setMoreOpen(true)}>
             <MoreHorizontal className="h-4 w-4" />
@@ -144,7 +173,7 @@ export default function Consultant360() {
               Create Coupon
             </Button>
             <Button size="sm" variant="outline" onClick={() => setCardxOpen(true)}>
-              Upload card (CardX)
+              Scan card
             </Button>
             {(persona === "admin" || persona === "operations") && (
               <Button size="sm" variant="secondary" onClick={() => setTransferOpen(true)}>
@@ -190,7 +219,7 @@ export default function Consultant360() {
               setCardxOpen(true);
             }}
           >
-            Upload visiting card (CardX)
+            Scan card
           </button>
           {(persona === "admin" || persona === "operations") && (
             <button
@@ -259,6 +288,32 @@ export default function Consultant360() {
                   <SourceTag>Synced from Existing Admission System</SourceTag>
                 </div>
               </div>
+              <div className="card-surface p-4">
+                <div className="mb-3 text-sm font-semibold">Ownership history</div>
+                <div className="space-y-0">
+                  {cOwn.map((o, i) => (
+                    <div key={o.id} className="flex gap-3">
+                      <div className="flex flex-col items-center">
+                        <div className="h-3 w-3 bg-[#e31c24]" />
+                        {i < cOwn.length - 1 && (
+                          <div className="min-h-[28px] w-px flex-1 bg-[#e5e5e5]" />
+                        )}
+                      </div>
+                      <div className="pb-4 text-sm">
+                        <div className="font-medium">{o.ownerName}</div>
+                        <div className="text-xs text-[#6b6b6b]">
+                          {formatDate(o.fromDate)}
+                          {o.toDate ? ` → ${formatDate(o.toDate)}` : " → current"}
+                          {o.reason ? ` · ${o.reason}` : ""}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {cOwn.length === 0 && (
+                    <p className="text-sm text-[#6b6b6b]">No ownership records</p>
+                  )}
+                </div>
+              </div>
               <div className="card-surface">
                 <div className="border-b border-[#e5e5e5] px-4 py-2 text-sm font-semibold">Activity</div>
                 <ul className="divide-y divide-[#e5e5e5]">
@@ -283,31 +338,70 @@ export default function Consultant360() {
         </TabsContent>
 
         <TabsContent value="meetings">
-          <div className="card-surface">
-            <div className="border-b px-4 py-2 text-sm font-semibold">
-              All meetings · geotag photos when captured
+          {cMeetings.length === 0 ? (
+            <EmptyState
+              title="No meetings yet"
+              description="Schedule a meeting for this consultant from Meetings."
+              action={
+                <Link href={`/b2b/meetings?schedule=1&consultantId=${c.id}`}>
+                  <Button>Schedule meeting</Button>
+                </Link>
+              }
+            />
+          ) : (
+            <div className="card-surface">
+              <div className="border-b px-4 py-2 text-sm font-semibold">
+                All meetings · add field photos inline
+              </div>
+              <ul className="divide-y divide-[#e5e5e5]">
+                {cMeetings.map((m) => (
+                  <li key={m.id} className="px-4 py-3 text-sm">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div>
+                          {formatDate(m.date)} — {m.type} · {m.time}
+                        </div>
+                        <MeetingPhotoChip photoUrl={m.photoUrl} geo={m.geo} />
+                      </div>
+                      <Badge tone={StatusTone(m.status)}>{m.status}</Badge>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setPhotoMeetingId(m.id);
+                          setPhotoDraft(
+                            m.photoUrl && m.geo ? { photoUrl: m.photoUrl, geo: m.geo } : null
+                          );
+                        }}
+                      >
+                        {m.photoUrl ? "Update field photo" : "Add field photo"}
+                      </Button>
+                      {m.status !== "Completed" && (
+                        <Button size="sm" variant="ghost" onClick={() => tryComplete(m.id)}>
+                          Complete
+                        </Button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <ul className="divide-y divide-[#e5e5e5]">
-              {cMeetings.map((m) => (
-                <li key={m.id} className="px-4 py-3 text-sm">
-                  <div className="flex justify-between gap-2">
-                    <span>
-                      {formatDate(m.date)} — {m.type} · {m.time}
-                    </span>
-                    <Badge tone={StatusTone(m.status)}>{m.status}</Badge>
-                  </div>
-                  <MeetingPhotoChip photoUrl={m.photoUrl} geo={m.geo} />
-                </li>
-              ))}
-              {cMeetings.length === 0 && (
-                <li className="px-4 py-6 text-sm text-[#6b6b6b]">No meetings yet</li>
-              )}
-            </ul>
-          </div>
+          )}
         </TabsContent>
 
         <TabsContent value="mou">
           <div className="space-y-4">
+            {reworkMou && (
+              <div className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <div className="font-semibold">Action required</div>
+                <p className="mt-1">{reworkMou.reworkMessage || "Rework requested by Operations."}</p>
+                <Button size="sm" className="mt-2" onClick={() => setTab("documents")}>
+                  Fix rework — upload docs
+                </Button>
+              </div>
+            )}
             {cMous.map((m) => (
               <div key={m.id} className="card-surface p-4">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -326,58 +420,89 @@ export default function Consultant360() {
                 </div>
                 {m.reworkMessage && (
                   <div className="mt-2 border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900">
-                    ACTION REQUIRED: {m.reworkMessage}
+                    Action required: {m.reworkMessage}
                   </div>
                 )}
               </div>
             ))}
             {cMous.length === 0 && (
-              <p className="text-sm text-[#6b6b6b]">No MOU yet. Request after a completed meeting.</p>
+              <EmptyState
+                title="No MOU yet"
+                description="Request after a completed meeting."
+                action={<Button onClick={openPrimaryCta}>Request MOU</Button>}
+              />
             )}
           </div>
         </TabsContent>
 
-        <TabsContent value="utms">
-          <div className="space-y-3">
-            <p className="text-xs text-[#6b6b6b]">
-              UTM may be requested before or after MOU. Source: Existing UTM System.
-            </p>
-            {cUtms.map((u) => (
-              <div
-                key={u.id}
-                className="flex items-center justify-between card-surface px-4 py-3 text-sm"
-              >
-                <div>
-                  <div className="font-mono font-medium">{u.code}</div>
-                  <div className="text-xs text-[#6b6b6b]">
-                    Counsellor {u.counsellorCode} {u.parentUtmId ? "· Child UTM" : "· Parent"}
-                  </div>
-                  <SourceTag>{u.source}</SourceTag>
-                </div>
-                {!u.parentUtmId && (
-                  <Button size="sm" variant="outline" onClick={() => createChildUtm(c.id, u.id)}>
-                    Create child UTM
-                  </Button>
-                )}
+        <TabsContent value="growth">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">UTMs</h3>
+                <Button size="sm" variant="outline" onClick={() => requestUtm(c.id)}>
+                  Request UTM
+                </Button>
               </div>
-            ))}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="coupons">
-          <div className="space-y-2">
-            {cCoupons.map((cp) => {
-              const creator = members.find((m) => m.id === cp.createdBy);
-              return (
-                <div key={cp.id} className="card-surface px-4 py-3 text-sm">
-                  <div className="font-mono font-medium">{cp.code}</div>
-                  <div className="text-xs text-[#6b6b6b]">
-                    Created by {creator?.name} · for {cp.createdFor} · {formatDate(cp.createdAt)}
+              <p className="text-xs text-[#6b6b6b]">
+                UTM may be requested before or after MOU. Source: Existing UTM System.
+              </p>
+              {cUtms.length === 0 ? (
+                <EmptyState title="No UTMs yet" description="Request a UTM to map counsellor codes." />
+              ) : (
+                cUtms.map((u) => (
+                  <div
+                    key={u.id}
+                    className="flex items-center justify-between card-surface px-4 py-3 text-sm"
+                  >
+                    <div>
+                      <div className="font-mono font-medium">{u.code}</div>
+                      <div className="text-xs text-[#6b6b6b]">
+                        Counsellor {u.counsellorCode} {u.parentUtmId ? "· Child UTM" : "· Parent"}
+                      </div>
+                      <SourceTag>{u.source}</SourceTag>
+                    </div>
+                    {!u.parentUtmId && (
+                      <Button size="sm" variant="outline" onClick={() => createChildUtm(c.id, u.id)}>
+                        Create child UTM
+                      </Button>
+                    )}
                   </div>
-                </div>
-              );
-            })}
-            {couponCode && <p className="text-xs text-[#6b6b6b]">Last created: {couponCode}</p>}
+                ))
+              )}
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Coupons</h3>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const code = `UGSOT${Date.now().toString().slice(-5)}`;
+                    setCouponCode(code);
+                    createCoupon(c.id, code);
+                  }}
+                >
+                  Create Coupon
+                </Button>
+              </div>
+              {cCoupons.length === 0 ? (
+                <EmptyState title="No coupons yet" description="Create a coupon for this consultant." />
+              ) : (
+                cCoupons.map((cp) => {
+                  const creator = members.find((m) => m.id === cp.createdBy);
+                  return (
+                    <div key={cp.id} className="card-surface px-4 py-3 text-sm">
+                      <div className="font-mono font-medium">{cp.code}</div>
+                      <div className="text-xs text-[#6b6b6b]">
+                        Created by {creator?.name} · for {cp.createdFor} · {formatDate(cp.createdAt)}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              {couponCode && <p className="text-xs text-[#6b6b6b]">Last created: {couponCode}</p>}
+            </div>
           </div>
         </TabsContent>
 
@@ -409,7 +534,7 @@ export default function Consultant360() {
         <TabsContent value="documents">
           <div className="mb-3">
             <Button size="sm" variant="outline" onClick={() => setCardxOpen(true)}>
-              Upload visiting card (CardX)
+              Scan card
             </Button>
             {visitingCard && (
               <p className="mt-2 text-xs text-[#6b6b6b]">
@@ -435,7 +560,7 @@ export default function Consultant360() {
                   </div>
                   {type === "Visiting Card" ? (
                     <Button size="sm" variant="outline" onClick={() => setCardxOpen(true)}>
-                      {doc ? "Re-scan" : "CardX"}
+                      {doc ? "Re-scan" : "Scan card"}
                     </Button>
                   ) : (
                     <Button size="sm" variant="outline" onClick={() => uploadDocument(c.id, type)}>
@@ -447,32 +572,6 @@ export default function Consultant360() {
             })}
           </div>
         </TabsContent>
-
-        <TabsContent value="ownership">
-          <div className="card-surface p-4">
-            <div className="space-y-0">
-              {cOwn.map((o, i) => (
-                <div key={o.id} className="flex gap-3">
-                  <div className="flex flex-col items-center">
-                    <div className="h-3 w-3 bg-[#e31c24]" />
-                    {i < cOwn.length - 1 && (
-                      <div className="min-h-[28px] w-px flex-1 bg-[#e5e5e5]" />
-                    )}
-                  </div>
-                  <div className="pb-4 text-sm">
-                    <div className="font-medium">{o.ownerName}</div>
-                    <div className="text-xs text-[#6b6b6b]">
-                      {formatDate(o.fromDate)}
-                      {o.toDate ? ` → ${formatDate(o.toDate)}` : " → current"}
-                      {o.reason ? ` · ${o.reason}` : ""}
-                    </div>
-                    {o.comments && <div className="text-xs text-[#6b6b6b]">{o.comments}</div>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </TabsContent>
       </Tabs>
 
       <CardxUpload
@@ -482,6 +581,84 @@ export default function Consultant360() {
         consultantId={c.id}
         onExtracted={() => setTab("documents")}
       />
+
+      <Modal
+        open={!!photoMeetingId}
+        onClose={() => {
+          setPhotoMeetingId(null);
+          setPhotoDraft(null);
+        }}
+        title="Add field photo"
+      >
+        <GeotagPhotoField
+          photoUrl={photoDraft?.photoUrl}
+          geo={photoDraft?.geo}
+          onChange={setPhotoDraft}
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setPhotoMeetingId(null);
+              setPhotoDraft(null);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            disabled={!photoDraft || !photoMeetingId}
+            onClick={() => {
+              if (photoMeetingId && photoDraft) attachMeetingPhoto(photoMeetingId, photoDraft);
+              setPhotoMeetingId(null);
+              setPhotoDraft(null);
+            }}
+          >
+            Save photo
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!completePromptId}
+        onClose={() => {
+          setCompletePromptId(null);
+          setPhotoDraft(null);
+        }}
+        title="Complete meeting"
+      >
+        <p className="mb-3 text-sm text-[#6b6b6b]">
+          Optional: add a field photo before marking complete.
+        </p>
+        <GeotagPhotoField
+          photoUrl={photoDraft?.photoUrl}
+          geo={photoDraft?.geo}
+          onChange={setPhotoDraft}
+        />
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (completePromptId) completeMeeting(completePromptId);
+              setCompletePromptId(null);
+              setPhotoDraft(null);
+            }}
+          >
+            Skip & complete
+          </Button>
+          <Button
+            onClick={() => {
+              if (completePromptId) {
+                if (photoDraft) attachMeetingPhoto(completePromptId, photoDraft);
+                completeMeeting(completePromptId);
+              }
+              setCompletePromptId(null);
+              setPhotoDraft(null);
+            }}
+          >
+            {photoDraft ? "Save photo & complete" : "Complete"}
+          </Button>
+        </div>
+      </Modal>
 
       <Modal open={mouOpen} onClose={() => setMouOpen(false)} title="Request MOU" xl>
         {mouStep === "ask" ? (

@@ -117,6 +117,7 @@ export interface Consultant {
   leadsCount: number;
   testTakersCount: number;
   admissionsCount: number;
+  incompleteProfile?: boolean;
   createdAt: string;
   updatedAt: string;
 }

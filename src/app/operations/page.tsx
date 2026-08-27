@@ -22,22 +22,43 @@ export default function OpsOverview() {
     };
   }, [mous]);
 
-  const queue = mous
-    .filter((m) =>
-      ["Requested", "Verification", "Rework", "Approved", "WO Generated", "Awaiting Signature"].includes(m.status)
-    )
-    .slice(0, 12);
+  const queue = useMemo(() => {
+    return mous
+      .filter((m) =>
+        ["Requested", "Verification", "Rework", "Approved", "WO Generated", "Awaiting Signature"].includes(
+          m.status
+        )
+      )
+      .sort((a, b) => {
+        const aOver = new Date(a.slaDueAt) < new Date() ? 0 : 1;
+        const bOver = new Date(b.slaDueAt) < new Date() ? 0 : 1;
+        if (aOver !== bOver) return aOver - bOver;
+        return new Date(a.slaDueAt).getTime() - new Date(b.slaDueAt).getTime();
+      })
+      .slice(0, 12);
+  }, [mous]);
 
   return (
     <div className="animate-in pb-8 sm:pb-16">
       <PageHeader title="Operations Overview" subtitle="What needs my attention?" />
       <KpiSection title="Queue health">
-        <Kpi label="Open requests" value={kpis.open} tone="blue" />
-        <Kpi label="Needs action" value={kpis.needs} tone="amber" hint={kpis.open ? `${Math.round((kpis.needs / kpis.open) * 100)}% of open` : undefined} />
-        <Kpi label="SLA risk" value={kpis.sla} tone="red" />
-        <Kpi label="Rework" value={kpis.rework} tone="violet" />
-        <Kpi label="Awaiting signature" value={kpis.awaitSig} tone="amber" />
-        <Kpi label="Signed" value={kpis.signed} tone="green" />
+        <Kpi label="Open requests" value={kpis.open} tone="blue" href="/operations/queue" />
+        <Kpi
+          label="Needs action"
+          value={kpis.needs}
+          tone="amber"
+          hint={kpis.open ? `${Math.round((kpis.needs / kpis.open) * 100)}% of open` : undefined}
+          href="/operations/queue?status=action"
+        />
+        <Kpi label="SLA risk" value={kpis.sla} tone="red" href="/operations/queue?sla=over" />
+        <Kpi label="Rework" value={kpis.rework} tone="violet" href="/operations/queue?status=Rework" />
+        <Kpi
+          label="Awaiting signature"
+          value={kpis.awaitSig}
+          tone="amber"
+          href="/operations/queue?status=Awaiting%20Signature"
+        />
+        <Kpi label="Signed" value={kpis.signed} tone="green" href="/operations/signed" />
       </KpiSection>
 
       <div className="mt-2 grid gap-3 lg:grid-cols-3">

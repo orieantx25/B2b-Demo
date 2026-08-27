@@ -2,12 +2,24 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAppStore } from "@/store/app-store";
-import { Badge, Button, Input, Label, Modal, PageHeader, Select, StatusTone } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Input,
+  Label,
+  Modal,
+  PageHeader,
+  Select,
+  StatusTone,
+} from "@/components/ui";
 import { CardxUpload, type CardxExtract } from "@/components/cardx-upload";
 import type { Consultant } from "@/types";
 
 export default function ConsultantsPage() {
+  const router = useRouter();
   const consultants = useAppStore((s) => s.consultants);
   const members = useAppStore((s) => s.members);
   const currentUserId = useAppStore((s) => s.currentUserId);
@@ -15,6 +27,7 @@ export default function ConsultantsPage() {
   const createConsultant = useAppStore((s) => s.createConsultant);
   const findDuplicates = useAppStore((s) => s.findDuplicates);
   const requestMerge = useAppStore((s) => s.requestMerge);
+  const addToast = useAppStore((s) => s.addToast);
 
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -29,9 +42,14 @@ export default function ConsultantsPage() {
     designation: "",
   });
 
-  const list = useMemo(() => {
+  const scoped = useMemo(() => {
     let rows = consultants;
     if (persona === "b2b") rows = rows.filter((c) => c.ownerId === currentUserId);
+    return rows;
+  }, [consultants, persona, currentUserId]);
+
+  const list = useMemo(() => {
+    let rows = scoped;
     if (q) {
       const s = q.toLowerCase();
       rows = rows.filter(
@@ -43,16 +61,27 @@ export default function ConsultantsPage() {
       );
     }
     return rows.slice(0, 100);
-  }, [consultants, persona, currentUserId, q]);
+  }, [scoped, q]);
+
+  const isSearchEmpty = list.length === 0 && q.trim().length > 0;
+  const isTrueEmpty = scoped.length === 0;
 
   const tryCreate = () => {
+    if (form.phone.trim().length < 8) {
+      addToast({
+        title: "Phone required",
+        description: "Enter a valid phone before creating the consultant.",
+      });
+      return;
+    }
     const found = findDuplicates(form.name, form.phone, form.email);
     if (found.length) {
       setDups(found);
       return;
     }
-    createConsultant(form);
+    const { consultant } = createConsultant(form);
     setOpen(false);
+    router.push(`/consultants/${consultant.id}`);
   };
 
   const onCardx = (data: CardxExtract) => {
@@ -75,14 +104,17 @@ export default function ConsultantsPage() {
         actions={
           <>
             <Button variant="outline" onClick={() => setCardx(true)}>
-              Upload visiting card
+              Scan card
             </Button>
             <Button onClick={() => setOpen(true)}>Create consultant</Button>
           </>
         }
       />
       <div className="mb-4">
+        <Label htmlFor="consultant-search">Search consultants</Label>
         <Input
+          id="consultant-search"
+          aria-label="Search consultants"
           placeholder="Search name, code, phone, email…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -90,57 +122,92 @@ export default function ConsultantsPage() {
         />
       </div>
 
-      <div className="space-y-2 sm:hidden">
-        {list.map((c) => {
-          const owner = members.find((m) => m.id === c.ownerId);
-          return (
-            <Link key={c.id} href={`/consultants/${c.id}`} className="block card-surface p-3.5">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold">{c.name}</div>
-                  <div className="mt-0.5 text-xs text-[#6b6b6b]">
-                    {c.organization} · {owner?.name}
+      {isTrueEmpty ? (
+        <EmptyState
+          title="No consultants yet"
+          description="Scan a visiting card or create a consultant after a meeting."
+          action={
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="outline" onClick={() => setCardx(true)}>
+                Scan card
+              </Button>
+              <Button onClick={() => setOpen(true)}>Create</Button>
+            </div>
+          }
+        />
+      ) : isSearchEmpty ? (
+        <EmptyState
+          title={`No matches for “${q.trim()}”`}
+          description="Try another name, code, phone, or email."
+          action={
+            <Button variant="outline" onClick={() => setQ("")}>
+              Clear search
+            </Button>
+          }
+        />
+      ) : (
+        <>
+          <div className="space-y-2 sm:hidden">
+            {list.map((c) => {
+              const owner = members.find((m) => m.id === c.ownerId);
+              return (
+                <Link key={c.id} href={`/consultants/${c.id}`} className="block card-surface p-3.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold">{c.name}</div>
+                      <div className="mt-0.5 text-xs text-[#6b6b6b]">
+                        {c.organization} · {owner?.name}
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge tone={StatusTone(c.status)}>{c.status}</Badge>
+                      {c.incompleteProfile && <Badge tone="warn">Incomplete</Badge>}
+                    </div>
                   </div>
-                </div>
-                <Badge tone={StatusTone(c.status)}>{c.status}</Badge>
-              </div>
-            </Link>
-          );
-        })}
-      </div>
+                </Link>
+              );
+            })}
+          </div>
 
-      <div className="hidden overflow-x-auto card-surface sm:block">
-        <table className="w-full min-w-[800px] text-left text-sm">
-          <thead className="bg-[#fafafa] text-[11px] font-semibold uppercase tracking-wide text-[#444]">
-            <tr>
-              <th className="px-3 py-2.5">Consultant</th>
-              <th className="px-3 py-2.5">Org</th>
-              <th className="px-3 py-2.5">Owner</th>
-              <th className="px-3 py-2.5">Status</th>
-              <th className="px-3 py-2.5">MOU</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.map((c) => (
-              <tr key={c.id} className="border-t border-[#e5e5e5] hover:bg-[#fafafa]">
-                <td className="px-3 py-2.5 font-medium">
-                  <Link href={`/consultants/${c.id}`} className="hover:text-[#e31c24]">
-                    {c.name}
-                  </Link>
-                </td>
-                <td className="px-3 py-2.5 text-[#6b6b6b]">{c.organization}</td>
-                <td className="px-3 py-2.5 text-xs">
-                  {members.find((m) => m.id === c.ownerId)?.name}
-                </td>
-                <td className="px-3 py-2.5">
-                  <Badge tone={StatusTone(c.status)}>{c.status}</Badge>
-                </td>
-                <td className="px-3 py-2.5 text-xs">{c.mouStatus}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          <div className="hidden overflow-x-auto card-surface sm:block">
+            <table className="w-full min-w-[800px] text-left text-sm">
+              <thead className="bg-[#fafafa] text-[11px] font-semibold uppercase tracking-wide text-[#444]">
+                <tr>
+                  <th className="px-3 py-2.5">Consultant</th>
+                  <th className="px-3 py-2.5">Org</th>
+                  <th className="px-3 py-2.5">Owner</th>
+                  <th className="px-3 py-2.5">Status</th>
+                  <th className="px-3 py-2.5">MOU</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((c) => (
+                  <tr key={c.id} className="border-t border-[#e5e5e5] hover:bg-[#fafafa]">
+                    <td className="px-3 py-2.5 font-medium">
+                      <Link href={`/consultants/${c.id}`} className="hover:text-[#e31c24]">
+                        {c.name}
+                      </Link>
+                      {c.incompleteProfile && (
+                        <span className="ml-2">
+                          <Badge tone="warn">Incomplete</Badge>
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-[#6b6b6b]">{c.organization}</td>
+                    <td className="px-3 py-2.5 text-xs">
+                      {members.find((m) => m.id === c.ownerId)?.name}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <Badge tone={StatusTone(c.status)}>{c.status}</Badge>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs">{c.mouStatus}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="Create consultant" wide>
         {dups.length ? (
@@ -169,9 +236,10 @@ export default function ConsultantsPage() {
             ))}
             <Button
               onClick={() => {
-                createConsultant({ ...form, force: true });
+                const { consultant } = createConsultant({ ...form, force: true });
                 setDups([]);
                 setOpen(false);
+                router.push(`/consultants/${consultant.id}`);
               }}
             >
               Create New
@@ -203,11 +271,22 @@ function ConsultantForm({
   setForm: (f: typeof form) => void;
   onSubmit: () => void;
 }) {
+  const labels: Record<keyof typeof form, string> = {
+    name: "Full name",
+    organization: "Organization",
+    phone: "Phone",
+    email: "Email",
+    region: "Region",
+    designation: "Designation",
+  };
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {(["name", "organization", "phone", "email", "designation"] as const).map((k) => (
         <div key={k}>
-          <Label className="capitalize">{k}</Label>
+          <Label>
+            {labels[k]}
+            {k === "phone" || k === "name" ? " *" : ""}
+          </Label>
           <Input value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />
         </div>
       ))}
@@ -220,7 +299,7 @@ function ConsultantForm({
         </Select>
       </div>
       <div className="flex justify-end sm:col-span-2">
-        <Button disabled={!form.name} onClick={onSubmit}>
+        <Button disabled={!form.name || form.phone.trim().length < 8} onClick={onSubmit}>
           Create
         </Button>
       </div>

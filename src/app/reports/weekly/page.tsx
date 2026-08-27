@@ -16,6 +16,7 @@ import {
 import { useAppStore } from "@/store/app-store";
 import { Badge, Button, Modal, PageHeader, StatusTone, Textarea } from "@/components/ui";
 import { ChartCard, ChartEmpty, chartColors, chartTooltipStyle } from "@/components/report-charts";
+import { ReportNav } from "@/components/report-nav";
 import { formatDate } from "@/lib/utils";
 
 export default function WeeklyReportsPage() {
@@ -66,6 +67,7 @@ export default function WeeklyReportsPage() {
         title="Weekly Reports"
         subtitle="Auto-generated. Operations reviews exceptions — not manual compile."
       />
+      <ReportNav />
 
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
         <ChartCard title="Weekly momentum" subtitle="Meetings, leads, and admissions over recent weeks">

@@ -6,8 +6,11 @@ import {
   ReactNode,
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
+  useEffect,
+  useId,
+  useRef,
 } from "react";
-
+import { X } from "lucide-react";
 export const Button = forwardRef<
   HTMLButtonElement,
   ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -83,9 +86,19 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   }
 );
 
-export function Label({ children, className }: { children: ReactNode; className?: string }) {
+export function Label({
+  children,
+  className,
+  htmlFor,
+}: {
+  children: ReactNode;
+  className?: string;
+  htmlFor?: string;
+}) {
   return (
-    <label className={cn("label-micro mb-1.5 block", className)}>{children}</label>
+    <label htmlFor={htmlFor} className={cn("label-micro mb-1.5 block", className)}>
+      {children}
+    </label>
   );
 }
 
@@ -118,11 +131,13 @@ export function Kpi({
   value,
   hint,
   tone = "ink",
+  href,
 }: {
   label: string;
   value: string | number;
   hint?: string;
   tone?: "ink" | "red" | "amber" | "green" | "blue" | "violet";
+  href?: string;
 }) {
   const valueColor = {
     ink: "text-[#111111]",
@@ -133,8 +148,8 @@ export function Kpi({
     violet: "text-[#7c3aed]",
   }[tone];
 
-  return (
-    <div className="flex min-h-[96px] flex-col justify-between rounded-[14px] border border-[#e5e5e5] bg-white px-4 py-3.5 shadow-[0_1px_2px_rgba(17,17,17,0.04)]">
+  const body = (
+    <>
       <div className="text-[0.62rem] font-semibold uppercase leading-tight tracking-[0.07em] text-[#6b6b6b]">
         {label}
       </div>
@@ -146,8 +161,21 @@ export function Kpi({
       ) : (
         <div className="mt-2 h-[0.72rem]" aria-hidden />
       )}
-    </div>
+    </>
   );
+
+  const className =
+    "flex min-h-[96px] flex-col justify-between rounded-[14px] border border-[#e5e5e5] bg-white px-4 py-3.5 shadow-[0_1px_2px_rgba(17,17,17,0.04)]";
+
+  if (href) {
+    return (
+      <a href={href} className={cn(className, "transition hover:border-[#e31c24]/40")}>
+        {body}
+      </a>
+    );
+  }
+
+  return <div className={className}>{body}</div>;
 }
 
 export function KpiSection({
@@ -219,11 +247,20 @@ export function PageHeader({
   );
 }
 
-export function EmptyState({ title, description }: { title: string; description?: string }) {
+export function EmptyState({
+  title,
+  description,
+  action,
+}: {
+  title: string;
+  description?: string;
+  action?: ReactNode;
+}) {
   return (
     <div className="card-surface border-dashed px-6 py-10 text-center">
       <div className="text-sm font-semibold text-[#111111]">{title}</div>
       {description && <p className="mt-1 text-sm text-[#6b6b6b]">{description}</p>}
+      {action && <div className="mt-4 flex justify-center">{action}</div>}
     </div>
   );
 }
@@ -243,23 +280,72 @@ export function Modal({
   wide?: boolean;
   xl?: boolean;
 }) {
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    const focusable = panel?.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    focusable?.[0]?.focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab" || !panel || !focusable?.length) return;
+      const list = Array.from(focusable);
+      const first = list[0]!;
+      const last = list[list.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      prev?.focus?.();
+    };
+  }, [open, onClose]);
+
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-start sm:p-4 sm:pt-[4vh] animate-in">
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-start sm:p-4 sm:pt-[4vh] animate-in"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div
+        ref={panelRef}
         className={cn(
           "w-full max-h-[94vh] overflow-y-auto rounded-t-2xl border border-[#e5e5e5] bg-white shadow-xl sm:rounded-[14px]",
           xl ? "sm:max-w-4xl" : wide ? "sm:max-w-3xl" : "sm:max-w-lg"
         )}
         role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#e5e5e5] bg-white px-4 py-3.5">
-          <h2 className="section-title text-[0.95rem]">{title}</h2>
+          <h2 id={titleId} className="section-title text-[0.95rem]">
+            {title}
+          </h2>
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-lg px-2 py-1 text-sm font-medium text-[#6b6b6b] hover:bg-[#f0f0f0] hover:text-[#111111]"
+            aria-label="Close dialog"
+            className="rounded-lg p-1.5 text-[#6b6b6b] hover:bg-[#f0f0f0] hover:text-[#111111]"
           >
-            Close
+            <X className="h-4 w-4" />
           </button>
         </div>
         <div className="p-4 pb-8 sm:pb-4">{children}</div>

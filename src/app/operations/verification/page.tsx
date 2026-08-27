@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useAppStore } from "@/store/app-store";
 import { Badge, Button, Label, Modal, PageHeader, StatusTone, Textarea } from "@/components/ui";
 import { MouLifecycle } from "@/components/journey";
 import { cn } from "@/lib/utils";
-import type { DocType } from "@/types";
+import type { DocType, VerificationFlag } from "@/types";
 
 function VerificationInner() {
+  const router = useRouter();
   const search = useSearchParams();
   const focusId = search.get("id");
   const mous = useAppStore((s) => s.mous);
@@ -32,9 +33,28 @@ function VerificationInner() {
     [mous]
   );
   const [selectedId, setSelectedId] = useState(focusId || queue[0]?.id || "");
+  const [docFilter, setDocFilter] = useState<VerificationFlag | "all">("all");
+
+  useEffect(() => {
+    if (focusId && focusId !== selectedId) {
+      setSelectedId(focusId);
+    }
+    // Only react to URL focus changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId]);
+
+  const selectMou = (id: string) => {
+    setSelectedId(id);
+    router.replace(`/operations/verification?id=${id}`, { scroll: false });
+  };
+
   const mou = mous.find((m) => m.id === selectedId) || queue[0];
   const c = consultants.find((x) => x.id === mou?.consultantId);
   const docs = documents.filter((d) => d.consultantId === mou?.consultantId);
+  const filteredDocs =
+    docFilter === "all"
+      ? docs
+      : docs.filter((d) => (d.verification || "Needs Review") === docFilter);
 
   const [reworkOpen, setReworkOpen] = useState(false);
   const [reworkItems, setReworkItems] = useState<DocType[]>(["GST"]);
@@ -62,10 +82,8 @@ function VerificationInner() {
           return (
             <button
               key={m.id}
-              onClick={() => {
-                setSelectedId(m.id);
-                if (m.status === "Requested") startVerification(m.id);
-              }}
+              type="button"
+              onClick={() => selectMou(m.id)}
               className={`shrink-0 border px-3 py-1.5 text-xs ${m.id === mou.id ? "border-[#111111] bg-[#e31c24]/30" : "border-[#e5e5e5] bg-white"}`}
             >
               {cc?.name?.slice(0, 18)}
@@ -75,7 +93,7 @@ function VerificationInner() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="card-surface p-4 min-h-[420px]">
+        <div className="order-2 card-surface min-h-[420px] p-4 lg:order-1">
           <div className="mb-3 text-sm font-semibold">Document preview</div>
           <div className="flex h-[360px] flex-col items-center justify-center border border-dashed border-[#e5e5e5] bg-[#f6f6f6] text-center">
             <div className="text-sm font-medium">{c.name}</div>
@@ -91,7 +109,7 @@ function VerificationInner() {
           </div>
         </div>
 
-        <div className="card-surface p-4">
+        <div className="order-1 card-surface p-4 lg:order-2">
           <div className="mb-3 flex items-center justify-between">
             <div className="text-sm font-semibold">Submitted information</div>
             <Badge tone={StatusTone(mou.status)}>{mou.status}</Badge>
@@ -111,24 +129,43 @@ function VerificationInner() {
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between gap-2 border-b border-[#e5e5e5] py-1">
                 <dt className="text-[#6b6b6b]">{k}</dt>
-                <dd className="font-medium text-right">{v}</dd>
+                <dd className="text-right font-medium">{v}</dd>
               </div>
             ))}
           </dl>
           <div className="mt-4">
             <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wide text-[#6b6b6b]">
-              <span className="font-semibold">Doc status</span>
-              <Badge tone="success">Match</Badge>
-              <Badge tone="danger">Missing</Badge>
-              <Badge tone="warn">Needs Review</Badge>
+              <span className="font-semibold">Filter docs</span>
+              {(
+                [
+                  ["all", "All"],
+                  ["Match", "Match"],
+                  ["Missing", "Missing"],
+                  ["Needs Review", "Needs Review"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setDocFilter(id === "all" ? "all" : id)}
+                  className={cn(
+                    "rounded-md border px-2 py-0.5 text-[10px] font-semibold normal-case",
+                    docFilter === id
+                      ? "border-[#111111] bg-[#111111] text-white"
+                      : "border-[#e5e5e5] bg-white text-[#6b6b6b]"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
             <div className="space-y-2">
-              {docs.length === 0 && (
+              {filteredDocs.length === 0 && (
                 <p className="rounded-[8px] border border-dashed border-[#e5e5e5] bg-[#fafafa] px-3 py-4 text-xs text-[#6b6b6b]">
-                  No documents uploaded yet
+                  No documents in this filter
                 </p>
               )}
-              {docs.map((d) => {
+              {filteredDocs.map((d) => {
                 const status = d.verification || "Needs Review";
                 const tone =
                   status === "Match" ? "success" : status === "Missing" ? "danger" : "warn";
@@ -151,6 +188,9 @@ function VerificationInner() {
           </div>
 
           <div className="mt-6 flex flex-wrap gap-2">
+            {mou.status === "Requested" && (
+              <Button onClick={() => startVerification(mou.id)}>Start verify</Button>
+            )}
             {["Requested", "Verification", "Rework"].includes(mou.status) && (
               <>
                 <Button variant="outline" onClick={() => setReworkOpen(true)}>
@@ -170,7 +210,9 @@ function VerificationInner() {
               <Button onClick={() => generateWo(mou.id)}>Generate standard WO</Button>
             )}
             {mou.status === "Approved" && mou.commercialType === "Non-Standard" && (
-              <p className="text-xs text-[#6b6b6b]">Non-standard continues via Legal/Finance email chain. Portal tracks status only.</p>
+              <p className="text-xs text-[#6b6b6b]">
+                Non-standard continues via Legal/Finance email chain. Portal tracks status only.
+              </p>
             )}
             {mou.status === "WO Generated" && (
               <>
