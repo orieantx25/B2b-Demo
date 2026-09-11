@@ -14,6 +14,7 @@ import type {
   TestTaker,
   UtmRecord,
   WeeklyReport,
+  UserTargets,
 } from "@/types";
 import { addDays, uid } from "@/lib/utils";
 
@@ -122,6 +123,9 @@ export function generateSeedData() {
     const id = `cns_${String(i + 1).padStart(4, "0")}`;
     const firstMeetingDate = createdAt;
 
+    const partnerKind: Consultant["partnerKind"] =
+      rng() > 0.55 ? "Coaching" : rng() > 0.35 ? "School" : "Other";
+
     consultants.push({
       id,
       name,
@@ -141,6 +145,7 @@ export function generateSeedData() {
       leadsCount,
       testTakersCount,
       admissionsCount,
+      partnerKind,
       createdAt,
       updatedAt: isoDaysAgo(rng, 30),
     });
@@ -241,13 +246,19 @@ export function generateSeedData() {
   const events: EventItem[] = [];
   for (let i = 0; i < 36; i++) {
     const owner = pick(rng, b2bMembers);
+    const startH = 9 + Math.floor(rng() * 4);
     events.push({
       id: uid("evt"),
-      name: pick(rng, ["Partner Meet", "City Roadshow", "Counsellor Summit", "Campus Connect", "uGSOT Briefing"]),
+      name: pick(rng, ["Partner Meet", "City Roadshow", "Counsellor Summit", "Campus Connect", "uGSOT Briefing", "Career Fair"]),
       date: isoDaysAgo(rng, 90).slice(0, 10),
+      startTime: `${String(startH).padStart(2, "0")}:00`,
+      endTime: `${String(startH + 3).padStart(2, "0")}:00`,
       location: pick(rng, ["Delhi", "Mumbai", "Bengaluru", "Hyderabad", "Pune", "Jaipur", "Online"]),
       notes: "B2B outreach event",
       ownerId: owner.id,
+      type: pick(rng, ["Career Fair", "Partner Meet", "Training", "Other"]),
+      invites: [],
+      eventData: [],
       createdAt: isoDaysAgo(rng, 90),
     });
   }
@@ -531,6 +542,15 @@ export function generateSeedData() {
     });
   }
 
+  const userTargets: UserTargets[] = b2bMembers.map((m, i) => ({
+    userId: m.id,
+    schools: 8 + Math.floor(rng() * 12) + (i % 3),
+    consultants: 10 + Math.floor(rng() * 15) + (i % 4),
+    meetings: 20 + Math.floor(rng() * 30) + (i % 5),
+    coachings: 6 + Math.floor(rng() * 10) + (i % 3),
+    updatedAt: new Date().toISOString(),
+  }));
+
   return {
     members,
     consultants,
@@ -547,5 +567,6 @@ export function generateSeedData() {
     mergeRequests,
     activities,
     weeklyReports,
+    userTargets,
   };
 }

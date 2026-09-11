@@ -1,8 +1,10 @@
 "use client";
 
 import { AppShell } from "@/components/app-shell";
+import { AuthProvider } from "@/components/auth-provider";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { useAppStore } from "@/store/app-store";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { PageSkeleton } from "@/components/ui/skeleton";
@@ -17,7 +19,7 @@ function StoreHydration({ children }: { children: React.ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="mx-auto max-w-6xl p-4 sm:p-6" aria-busy aria-label="Loading demo">
+      <div className="mx-auto max-w-6xl p-4 sm:p-6" aria-busy aria-label="Loading">
         <PageSkeleton />
       </div>
     );
@@ -26,20 +28,31 @@ function StoreHydration({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function makeQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false },
+    },
+  });
+}
+
 export function Providers({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  if (pathname === "/") {
-    return (
-      <ErrorBoundary>
-        <StoreHydration>{children}</StoreHydration>
-      </ErrorBoundary>
-    );
-  }
+  const [queryClient] = useState(makeQueryClient);
+  const bare =
+    pathname === "/login" ||
+    pathname === "/" ||
+    pathname === "/session-expired";
+
   return (
-    <ErrorBoundary>
-      <StoreHydration>
-        <AppShell>{children}</AppShell>
-      </StoreHydration>
-    </ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <ErrorBoundary>
+        <StoreHydration>
+          <AuthProvider>
+            {bare ? children : <AppShell>{children}</AppShell>}
+          </AuthProvider>
+        </StoreHydration>
+      </ErrorBoundary>
+    </QueryClientProvider>
   );
 }

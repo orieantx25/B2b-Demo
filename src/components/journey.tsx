@@ -12,15 +12,17 @@ const STEPS = [
   "WO GENERATED",
   "WO SENT",
   "SIGNED",
+  "MATERIALS SHARED",
   "UTM CREATED",
   "FIRST LEAD",
   "ACTIVE",
 ] as const;
 
 function stepIndex(c: Consultant, mouStatus: MouStatus | "None"): number {
-  if (c.status === "Active") return 8;
-  if (c.firstLeadId || c.firstLeadDate) return 7;
-  if (c.utmStatus !== "None") return 6;
+  if (c.status === "Active") return 9;
+  if (c.firstLeadId || c.firstLeadDate) return 8;
+  if (c.utmStatus !== "None") return 7;
+  if (mouStatus === "Signed" && c.materialsSharedAt) return 6;
   if (mouStatus === "Signed") return 5;
   if (["Awaiting Signature", "WO Sent"].includes(mouStatus)) return 4;
   if (mouStatus === "WO Generated") return 3;
@@ -60,6 +62,7 @@ function stageTimestamps(
     mou?.woGeneratedAt,
     mou?.woSentAt,
     mou?.signedAt,
+    c.materialsSharedAt,
     utmAt,
     c.firstLeadDate,
     activeAt,
@@ -129,13 +132,19 @@ export function ConsultantJourney({ consultant }: { consultant: Consultant }) {
                     {done ? "—" : "Not reached"}
                   </div>
                 )}
+                {step === "MATERIALS SHARED" && consultant.materialsSharedVia && (
+                  <div className="mt-0.5 text-[10px] text-[#6b6b6b]">
+                    via {consultant.materialsSharedVia === "auto_signed" ? "signed agreement" : "manual send"}
+                  </div>
+                )}
               </div>
             </div>
           );
         })}
       </div>
       <p className="mt-2 text-[11px] text-[#6b6b6b]">
-        MOU signed ≠ Active. First associated lead activates the consultant.
+        After signed agreement, drive packs auto-email to the partner. B2B can also send anytime via Send
+        Marketing Material.
       </p>
     </div>
   );
@@ -151,24 +160,13 @@ export function MouLifecycle({ status }: { status: MouStatus }) {
     "Awaiting Signature",
     "Signed",
   ];
-  const idx = steps.indexOf(status === "Rework" ? "Verification" : status);
+  const idx = Math.max(0, steps.indexOf(status));
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className="flex flex-wrap gap-1.5">
       {steps.map((s, i) => (
-        <div key={s} className="flex items-center gap-1.5">
-          <span
-            className={cn(
-              "rounded-full px-2.5 py-0.5 text-[10px] font-semibold",
-              i <= idx ? "bg-[#e31c24] text-white" : "bg-[#f0f0f0] text-[#6b6b6b]",
-              status === "Rework" &&
-                s === "Verification" &&
-                "border border-[#f0d2ad] bg-[#fff4e8] text-[#b45309]"
-            )}
-          >
-            {s === "Awaiting Signature" ? "AWAITING SIG" : s.toUpperCase()}
-          </span>
-          {i < steps.length - 1 && <span className="text-xs text-[#e5e5e5]">→</span>}
-        </div>
+        <Badge key={s} tone={i <= idx ? (s === "Signed" ? "success" : "lime") : "neutral"}>
+          {s}
+        </Badge>
       ))}
     </div>
   );

@@ -1,88 +1,73 @@
 # uGSOT B2B Operations Portal
 
-Production-quality frontend demo for leadership walkthroughs. Mock data only — no real auth, OCR, email, or APIs.
+Production multi-user portal for B2B field, Operations, Leadership, and Super Admin. Passwordless email login, role-based workspaces, Supabase-ready schema (local in-memory store when Supabase env is unset).
 
-## Run
+## Quick start
 
 ```bash
 npm install
+cp .env.example .env.local
+# set AUTH_SECRET (required for signed session cookies)
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Open [http://localhost:3000/login](http://localhost:3000/login)
 
-## Build / deploy
+**Demo Super Admin:** `superadmin@ugsot.edu`  
+Seeded member emails use `name.surname@ugsot.upgrad.com` (see Admin → Users after login).
 
-```bash
-npm run build
-npm start
+## Auth model
+
+1. Enter work email on `/login`
+2. Server validates email exists in `profiles` and is **active**
+3. Signed httpOnly JWT cookie (`ugsot_session`) stores `userId`, `role`, `region`
+4. Middleware role-gates `/b2b`, `/operations`, `/reports`, `/admin`
+5. No passwords (by design)
+
+## Supabase setup
+
+1. Create a Supabase project
+2. Apply migrations:
+   - `supabase/migrations/0001_init.sql` — schema + enums + RLS stubs
+   - `supabase/migrations/0002_storage.sql` — buckets `meeting-photos`, `visiting-cards`, `documents`
+3. Run `supabase/seed.sql` for bootstrap profiles + settings
+4. Set in `.env.local`:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+AUTH_SECRET=...
 ```
 
-Vercel: import the repo; `vercel.json` is included. Copy `.env.example` → `.env.local` if you want local env vars (optional).
-
-Demo state persists in `sessionStorage` (`ugsot-b2b-demo`) so refresh keeps your walkthrough. Use **Reset demo** on the error fallback, or clear that key, to restore seed data.
-
-## Stack
-
-Next.js 15 · TypeScript · Tailwind 4 · Zustand (session persist) · Recharts · Lucide · shadcn/Radix primitives
+Without Supabase env vars the app uses a **local server store** seeded from `src/data/seed.ts` so demos and `npm run build` work offline.
 
 ## Workspaces
 
-| View | Path | Audience |
-|------|------|----------|
-| B2B Portal View | `/b2b` | Field / B2B members |
-| Operations View | `/operations` | Ops verification & WO |
-| Reports & Insights View | `/reports` | Leadership |
+| Role | Default home | Notes |
+|------|--------------|-------|
+| `b2b_member` / `b2b_lead` | `/b2b` | Mobile-first field portal |
+| `operations` | `/operations` | Desktop verification / WO |
+| `leadership` | `/reports` | Desktop insights |
+| `admin` / `super_admin` | `/admin` | Users, access matrix, settings, audit; can enter all workspaces |
 
-Use the persona switcher in the header (B2B / Operations / Leadership / Admin).
+## Legacy Admin Portal (UTM / Coupon)
 
----
+Create UTM / Coupon opens a **Continue in Admin Portal** modal and launches `legacy_portal_utm_url` / `legacy_portal_coupon_url` from Settings with query params. Synced UTMs/coupons still render in-app. Adapter: `src/lib/legacy-integration.ts`.
 
-## Demo script (20 scenarios)
+## Stack
 
-Walk these in order for a ~25-minute leadership demo. Start as **B2B** persona unless noted.
+Next.js 15 · TypeScript · Tailwind 4 · TanStack Query · Zustand (UI) · Zod · Web Crypto JWT · Supabase clients · Recharts · Lucide
 
-1. **Landing** — Open `/`, pick a workspace chip, land in B2B Overview KPIs.
-2. **Schedule meeting** — Meetings & Events → schedule a consultant meeting (name/org/phone).
-3. **Complete meeting** — Mark the meeting Completed (unlocks MOU gate).
-4. **Create consultant** — My Consultants → add from meeting; note duplicate detection if name/phone collide.
-5. **Duplicate / merge** — Force a near-duplicate; request merge; switch to Ops/Admin to resolve if shown.
-6. **Consultant 360** — Open a consultant; sticky actions + tabs (Overview → Journey → Documents).
-7. **Request MOU (Standard)** — Request MOU → pick completed meeting → Standard slab; note **locked** payout fields.
-8. **Request MOU (Non-Standard)** — Second consultant → Non-Standard; payout fields become **editable**.
-9. **Ops queue** — Switch persona to **Operations** → MOU / WO Queue; open Verification.
-10. **Verify docs** — Verification workspace: Match / Missing / Needs Review chips; Approve & continue.
-11. **Rework loop** — Request rework with GST selected; as B2B re-upload / submit rework path.
-12. **Generate & send WO** — Approve Standard MOU → Generate WO → Preview → Send WO.
-13. **Mark signed** — Mark signed copy received; consultant MOU status updates to Signed.
-14. **UTM & coupon** — On 360: Request UTM, Create Coupon; Ops → UTM / Coupon Mapping.
-15. **Ownership transfer** — Admin/Ops: Transfer ownership; check Ownership History tab.
-16. **First lead / activate** — Simulate first lead; confirm Active status and journey step.
-17. **B2B MOU status strip** — B2B → MOU / WO: Total / Requested / Verification / Rework / In progress / Signed.
-18. **Performance** — B2B My Performance + Reports → B2B / Consultant performance tables.
-19. **Weekly report** — Reports → Weekly Reports → mark reviewed / add notes.
-20. **Executive funnel** — Reports Overview funnel + refresh persistence (reload page; actions remain).
+## Scripts
 
-### Smoke checklist (primary buttons)
+```bash
+npm run dev
+npm run build
+npm start
+npm run lint
+```
 
-- [ ] Persona switcher updates shell + default workspace
-- [ ] Schedule / complete / reschedule meeting
-- [ ] Create consultant + duplicate flag
-- [ ] Request MOU (meeting mandatory)
-- [ ] Ops verify / rework / approve / WO / signed
-- [ ] UTM request + coupon create
-- [ ] Ownership transfer
-- [ ] Simulate first lead
-- [ ] Weekly report review
-- [ ] CardX extract toast (where exposed in meetings flow)
+## Vercel
 
-## Editable vs locked fields
-
-- **Editable** — white inputs, red focus ring (`Field` / `Editable*`)
-- **Locked** — muted `#fafafa`, lock icon, helper “Management approved / system synced” (`LockedField`)
-
-Standard commercial payout is locked; Non-Standard is editable.
-
-## Out of scope
-
-Real auth, live OCR/email, finance/ROI engines, production APIs.
+Import the repo; set the same env vars as `.env.example`. `vercel.json` is included.

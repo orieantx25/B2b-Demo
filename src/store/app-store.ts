@@ -4,6 +4,8 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { generateSeedData } from "@/data/seed";
 import { addDays, uid } from "@/lib/utils";
+import { findConflictingEvent } from "@/lib/calendar-conflict";
+import { PARTNER_DRIVE_MATERIALS } from "@/lib/partner-materials";
 import type {
   ActivityItem,
   CommercialType,
@@ -18,6 +20,7 @@ import type {
   Persona,
   StandardSlab,
   ToastItem,
+  UserTargets,
   Workspace,
 } from "@/types";
 
@@ -41,15 +44,30 @@ interface Store extends ReturnType<typeof buildInitial> {
     organization?: string;
     photoUrl?: string;
     geo?: { lat: number; lng: number; label?: string; capturedAt: string };
-  }) => string;
+  }) => string | null;
   completeMeeting: (id: string) => void;
   attachMeetingPhoto: (
     meetingId: string,
     payload: { photoUrl: string; geo: { lat: number; lng: number; label?: string; capturedAt: string } }
   ) => void;
   linkMeetingToConsultant: (meetingId: string, consultantId: string) => void;
-  rescheduleMeeting: (id: string, date: string, time: string) => void;
-  createEvent: (input: Omit<EventItem, "id" | "createdAt" | "ownerId">) => void;
+  rescheduleMeeting: (id: string, date: string, time: string) => boolean;
+  createEvent: (input: {
+    name: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    location: string;
+    notes?: string;
+    type: EventItem["type"];
+    inviteMemberIds?: string[];
+    scheduleFileName?: string;
+  }) => string;
+  uploadEventSchedule: (eventId: string, fileName: string) => void;
+  inviteToEvent: (eventId: string, memberIds: string[]) => void;
+  uploadEventData: (eventId: string, fileName: string, kind?: EventItem["eventData"][0]["kind"]) => void;
+  findCalendarConflict: (date: string, time: string) => EventItem | null;
+  sendMarketingMaterial: (consultantId: string) => void;
   createConsultant: (input: {
     name: string;
     organization: string;
@@ -84,6 +102,13 @@ interface Store extends ReturnType<typeof buildInitial> {
   uploadDocument: (consultantId: string, type: DocType, mouId?: string) => void;
   markReportReviewed: (id: string) => void;
   updateReportNotes: (id: string, notes: string) => void;
+  setUserTargets: (input: {
+    userId: string;
+    schools: number;
+    consultants: number;
+    meetings: number;
+    coachings: number;
+  }) => void;
   applyCardxExtract: (data: {
     name: string;
     phone: string;
@@ -113,6 +138,7 @@ function buildInitial() {
     mergeRequests: seed.mergeRequests,
     activities: seed.activities,
     weeklyReports: seed.weeklyReports,
+    userTargets: seed.userTargets,
     toasts: [] as ToastItem[],
   };
 }
@@ -151,7 +177,21 @@ export const useAppStore = create<Store>()(
 
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
+  findCalendarConflict: (date, time) => {
+    const { events } = get();
+    return findConflictingEvent(events, date, time);
+  },
+
   scheduleMeeting: (input) => {
+    const conflict = get().findCalendarConflict(input.date, input.time);
+    if (conflict) {
+      get().addToast({
+        title: "Time blocked by event",
+        description: `${conflict.name} (${conflict.startTime}–${conflict.endTime}). Pick another slot.`,
+        variant: "error",
+      });
+      return null;
+    }
     const id = uid("mtg");
     const meeting: Meeting = {
       id,
@@ -230,27 +270,181 @@ export const useAppStore = create<Store>()(
   },
 
   rescheduleMeeting: (id, date, time) => {
+    const conflict = get().findCalendarConflict(date, time);
+    if (conflict) {
+      get().addToast({
+        title: "Time blocked by event",
+        description: `${conflict.name} (${conflict.startTime}–${conflict.endTime}). Pick another slot.`,
+        variant: "error",
+      });
+      return false;
+    }
     set((s) => ({
       meetings: s.meetings.map((m) =>
         m.id === id ? { ...m, date, time, status: "Rescheduled" } : m
       ),
     }));
     get().addToast({ title: "Meeting rescheduled", variant: "success" });
+    return true;
   },
 
   createEvent: (input) => {
+    const id = uid("evt");
+    const members = get().members;
+    const invites = (input.inviteMemberIds || [])
+      .map((mid) => members.find((m) => m.id === mid))
+      .filter(Boolean)
+      .map((m) => ({
+        memberId: m!.id,
+        email: m!.email,
+        name: m!.name,
+        status: "Invited" as const,
+      }));
+    set((s) => {
+      const activities = [...s.activities];
+      pushActivity(activities, {
+        type: "event",
+        title: "Event added to calendar",
+        description: `${input.name} · ${input.date} ${input.startTime}–${input.endTime}${
+          input.scheduleFileName ? ` · schedule: ${input.scheduleFileName}` : ""
+        }`,
+        actorId: s.currentUserId,
+      });
+      return {
+        events: [
+          {
+            id,
+            name: input.name,
+            date: input.date,
+            startTime: input.startTime,
+            endTime: input.endTime,
+            location: input.location,
+            notes: input.notes,
+            type: input.type,
+            ownerId: s.currentUserId,
+            invites,
+            scheduleFileName: input.scheduleFileName,
+            scheduleUploadedAt: input.scheduleFileName ? new Date().toISOString() : undefined,
+            eventData: [],
+            createdAt: new Date().toISOString(),
+          },
+          ...s.events,
+        ],
+        activities,
+      };
+    });
+    get().addToast({
+      title: "Event on calendar",
+      description:
+        invites.length > 0
+          ? `Invites sent to ${invites.length} teammate(s)`
+          : "Blocks meeting slots in this window",
+      variant: "success",
+    });
+    return id;
+  },
+
+  uploadEventSchedule: (eventId, fileName) => {
     set((s) => ({
-      events: [
-        {
-          ...input,
-          id: uid("evt"),
-          ownerId: s.currentUserId,
-          createdAt: new Date().toISOString(),
-        },
-        ...s.events,
-      ],
+      events: s.events.map((e) =>
+        e.id === eventId
+          ? { ...e, scheduleFileName: fileName, scheduleUploadedAt: new Date().toISOString() }
+          : e
+      ),
     }));
-    get().addToast({ title: "Event created", variant: "success" });
+    get().addToast({
+      title: "Schedule uploaded",
+      description: `${fileName} added to calendar event`,
+      variant: "success",
+    });
+  },
+
+  inviteToEvent: (eventId, memberIds) => {
+    const members = get().members;
+    set((s) => ({
+      events: s.events.map((e) => {
+        if (e.id !== eventId) return e;
+        const existing = new Set(e.invites.map((i) => i.memberId).filter(Boolean));
+        const added = memberIds
+          .filter((id) => !existing.has(id))
+          .map((mid) => members.find((m) => m.id === mid))
+          .filter(Boolean)
+          .map((m) => ({
+            memberId: m!.id,
+            email: m!.email,
+            name: m!.name,
+            status: "Invited" as const,
+          }));
+        return { ...e, invites: [...e.invites, ...added] };
+      }),
+    }));
+    get().addToast({
+      title: "Coschedule invites sent",
+      description: `${memberIds.length} teammate(s) invited`,
+      variant: "success",
+    });
+  },
+
+  uploadEventData: (eventId, fileName, kind = "other") => {
+    set((s) => ({
+      events: s.events.map((e) =>
+        e.id === eventId
+          ? {
+              ...e,
+              eventData: [
+                {
+                  id: uid("edata"),
+                  name: fileName,
+                  uploadedAt: new Date().toISOString(),
+                  kind,
+                },
+                ...e.eventData,
+              ],
+            }
+          : e
+      ),
+    }));
+    get().addToast({
+      title: "Event data uploaded",
+      description: fileName,
+      variant: "success",
+    });
+  },
+
+  sendMarketingMaterial: (consultantId) => {
+    const c = get().consultants.find((x) => x.id === consultantId);
+    if (!c) return;
+    const packs = Object.values(PARTNER_DRIVE_MATERIALS)
+      .map((p) => p.label)
+      .join(", ");
+    set((s) => {
+      const activities = [...s.activities];
+      pushActivity(activities, {
+        consultantId,
+        type: "materials",
+        title: "Marketing material sent",
+        description: `Drive packs emailed to ${c.email}: ${packs}`,
+        actorId: s.currentUserId,
+      });
+      return {
+        consultants: s.consultants.map((x) =>
+          x.id === consultantId
+            ? {
+                ...x,
+                materialsSharedAt: new Date().toISOString(),
+                materialsSharedVia: "manual" as const,
+                updatedAt: new Date().toISOString(),
+              }
+            : x
+        ),
+        activities,
+      };
+    });
+    get().addToast({
+      title: "Marketing material sent",
+      description: `Shared to ${c.email}`,
+      variant: "success",
+    });
   },
 
   findDuplicates: (name, phone, email) => {
@@ -293,6 +487,7 @@ export const useAppStore = create<Store>()(
       testTakersCount: 0,
       admissionsCount: 0,
       incompleteProfile,
+      partnerKind: "Other",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -526,6 +721,10 @@ export const useAppStore = create<Store>()(
   markSigned: (mouId) => {
     set((s) => {
       const mou = s.mous.find((m) => m.id === mouId)!;
+      const partner = s.consultants.find((c) => c.id === mou.consultantId);
+      const packs = Object.values(PARTNER_DRIVE_MATERIALS)
+        .map((p) => p.label)
+        .join(", ");
       const activities = [...s.activities];
       pushActivity(activities, {
         consultantId: mou.consultantId,
@@ -534,6 +733,15 @@ export const useAppStore = create<Store>()(
         description: mou.woNumber || "WO signed",
         actorId: s.currentUserId,
       });
+      if (partner?.email) {
+        pushActivity(activities, {
+          consultantId: mou.consultantId,
+          type: "materials",
+          title: "Materials auto-shared",
+          description: `Marketing, training & report packs emailed to ${partner.email}: ${packs}`,
+          actorId: s.currentUserId,
+        });
+      }
       const docs = [
         {
           id: uid("doc"),
@@ -556,13 +764,23 @@ export const useAppStore = create<Store>()(
         consultants: s.consultants.map((c) => {
           if (c.id !== mou.consultantId) return c;
           const nextStatus = c.leadsCount > 0 ? "Active" : c.utmStatus !== "None" ? "UTM Ready" : "MOU Signed";
-          return { ...c, mouStatus: "Signed", status: nextStatus };
+          return {
+            ...c,
+            mouStatus: "Signed",
+            status: nextStatus,
+            materialsSharedAt: new Date().toISOString(),
+            materialsSharedVia: "auto_signed" as const,
+          };
         }),
         documents: docs,
         activities,
       };
     });
-    get().addToast({ title: "Signed copy received", variant: "success" });
+    get().addToast({
+      title: "Signed · materials shared",
+      description: "Drive packs sent to partner email",
+      variant: "success",
+    });
   },
 
   requestUtm: (consultantId) => {
@@ -766,6 +984,28 @@ export const useAppStore = create<Store>()(
     get().addToast({ title: "Report notes saved", variant: "success" });
   },
 
+  setUserTargets: ({ userId, schools, consultants, meetings, coachings }) => {
+    const now = new Date().toISOString();
+    set((s) => {
+      const exists = s.userTargets.some((t) => t.userId === userId);
+      const next: UserTargets = {
+        userId,
+        schools: Math.max(0, Math.floor(schools)),
+        consultants: Math.max(0, Math.floor(consultants)),
+        meetings: Math.max(0, Math.floor(meetings)),
+        coachings: Math.max(0, Math.floor(coachings)),
+        updatedAt: now,
+        updatedBy: s.currentUserId,
+      };
+      return {
+        userTargets: exists
+          ? s.userTargets.map((t) => (t.userId === userId ? next : t))
+          : [next, ...s.userTargets],
+      };
+    });
+    get().addToast({ title: "Targets saved", variant: "success" });
+  },
+
   applyCardxExtract: (data) => {
     get().addToast({
       title: "Scan complete",
@@ -778,25 +1018,10 @@ export const useAppStore = create<Store>()(
       name: "ugsot-b2b-demo",
       storage: createJSONStorage(() => sessionStorage),
       skipHydration: true,
+      // UI + admin targets — domain resets from seed; identity from auth
       partialize: (s) => ({
-        persona: s.persona,
         workspace: s.workspace,
-        currentUserId: s.currentUserId,
-        members: s.members,
-        consultants: s.consultants,
-        meetings: s.meetings,
-        events: s.events,
-        mous: s.mous,
-        utms: s.utms,
-        coupons: s.coupons,
-        leads: s.leads,
-        testTakers: s.testTakers,
-        admissions: s.admissions,
-        ownership: s.ownership,
-        documents: s.documents,
-        mergeRequests: s.mergeRequests,
-        activities: s.activities,
-        weeklyReports: s.weeklyReports,
+        userTargets: s.userTargets,
       }),
     }
   )

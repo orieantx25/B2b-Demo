@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAppStore } from "@/store/app-store";
-import type { Persona, Workspace } from "@/types";
+import { useAuth } from "@/components/auth-provider";
+import type { Workspace } from "@/types";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui";
 import { Sheet } from "@/components/ui/sheet";
@@ -29,11 +30,17 @@ import {
   Camera,
   CalendarPlus,
   X,
+  LogOut,
+  Settings,
+  KeyRound,
+  Target,
 } from "lucide-react";
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
+import { allowedWorkspaces, type AppRole } from "@/lib/auth/roles";
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; short: string };
 type NavGroup = { label: string; items: NavItem[] };
+type ShellWorkspace = Workspace | "admin";
 
 const b2bNav: NavItem[] = [
   { href: "/b2b", label: "Overview", icon: LayoutDashboard, short: "Home" },
@@ -75,15 +82,26 @@ const opsGroups: NavGroup[] = [
 const reportsNav: NavItem[] = [
   { href: "/reports", label: "Executive Overview", icon: PieChart, short: "Exec" },
   { href: "/reports/b2b", label: "B2B Performance", icon: TrendingUp, short: "B2B" },
+  { href: "/reports/targets", label: "Targets vs Achievement", icon: Target, short: "Targets" },
   { href: "/reports/consultants", label: "Consultant Performance", icon: Users, short: "Cons." },
   { href: "/reports/mou", label: "MOU / WO Efficiency", icon: FileText, short: "MOU" },
   { href: "/reports/weekly", label: "Weekly Reports", icon: FileBarChart, short: "Weekly" },
 ];
 
-const workspaces: { id: Workspace; label: string; short: string; path: string }[] = [
-  { id: "b2b", label: "B2B Portal View", short: "B2B View", path: "/b2b" },
-  { id: "operations", label: "Operations View", short: "Ops View", path: "/operations" },
-  { id: "reports", label: "Reports & Insights View", short: "Reports View", path: "/reports" },
+const adminNav: NavItem[] = [
+  { href: "/admin", label: "Admin Overview", icon: LayoutDashboard, short: "Home" },
+  { href: "/admin/users", label: "Users & Roles", icon: Users, short: "Users" },
+  { href: "/admin/targets", label: "User Targets", icon: Target, short: "Targets" },
+  { href: "/admin/access", label: "Access Matrix", icon: KeyRound, short: "Access" },
+  { href: "/admin/settings", label: "Settings", icon: Settings, short: "Settings" },
+  { href: "/admin/audit", label: "Audit", icon: FileBarChart, short: "Audit" },
+];
+
+const ALL_WORKSPACES: { id: ShellWorkspace; label: string; short: string; path: string }[] = [
+  { id: "b2b", label: "B2B Portal", short: "B2B", path: "/b2b" },
+  { id: "operations", label: "Operations", short: "Ops", path: "/operations" },
+  { id: "reports", label: "Reports", short: "Reports", path: "/reports" },
+  { id: "admin", label: "Admin", short: "Admin", path: "/admin" },
 ];
 
 function flatOps(): NavItem[] {
@@ -91,7 +109,7 @@ function flatOps(): NavItem[] {
 }
 
 function isNavActive(pathname: string, href: string) {
-  if (href === "/b2b" || href === "/operations" || href === "/reports") {
+  if (href === "/b2b" || href === "/operations" || href === "/reports" || href === "/admin") {
     return pathname === href;
   }
   if (href === "/b2b/consultants") {
@@ -114,8 +132,9 @@ function NavLink({
     <Link
       href={item.href}
       onClick={onNavigate}
+      aria-current={active ? "page" : undefined}
       className={cn(
-        "flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm transition duration-150",
+        "flex min-h-11 items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm transition duration-150",
         active
           ? "bg-[#fdecec] font-semibold text-[#e31c24]"
           : "text-[#6b6b6b] hover:bg-[#fafafa] hover:text-[#111111]"
@@ -127,52 +146,59 @@ function NavLink({
   );
 }
 
+function detectWorkspace(pathname: string): ShellWorkspace {
+  if (pathname.startsWith("/admin")) return "admin";
+  if (pathname.startsWith("/operations")) return "operations";
+  if (pathname.startsWith("/reports")) return "reports";
+  return "b2b";
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const persona = useAppStore((s) => s.persona);
-  const workspace = useAppStore((s) => s.workspace);
-  const setPersona = useAppStore((s) => s.setPersona);
+  const { user, logout } = useAuth();
   const setWorkspace = useAppStore((s) => s.setWorkspace);
-  const currentUserId = useAppStore((s) => s.currentUserId);
-  const members = useAppStore((s) => s.members);
   const consultants = useAppStore((s) => s.consultants);
   const toasts = useAppStore((s) => s.toasts);
   const dismissToast = useAppStore((s) => s.dismissToast);
-  const user = members.find((m) => m.id === currentUserId);
   const [menuOpen, setMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
 
+  const shellWorkspace = detectWorkspace(pathname);
+  const role = (user?.role || "b2b_member") as AppRole;
+  const workspaces = useMemo(() => {
+    const allowed = allowedWorkspaces(role);
+    return ALL_WORKSPACES.filter((w) => allowed.includes(w.id));
+  }, [role]);
+
   const flatNav =
-    workspace === "b2b" ? b2bNav : workspace === "operations" ? flatOps() : reportsNav;
+    shellWorkspace === "b2b"
+      ? b2bNav
+      : shellWorkspace === "operations"
+        ? flatOps()
+        : shellWorkspace === "admin"
+          ? adminNav
+          : reportsNav;
   const mobileTabs = flatNav.slice(0, 4);
   const overflowNav = flatNav.slice(4);
   const showB2bCapture =
-    workspace === "b2b" &&
+    shellWorkspace === "b2b" &&
     (pathname.startsWith("/b2b") || pathname.startsWith("/consultants/"));
-  const showMobileWorkspaceChips = workspace !== "b2b";
+  const showMobileWorkspaceChips = workspaces.length > 1 && shellWorkspace !== "b2b";
 
   useEffect(() => {
-    if (pathname.startsWith("/b2b") && workspace !== "b2b") setWorkspace("b2b");
-    if (pathname.startsWith("/consultants/") && workspace !== "b2b") setWorkspace("b2b");
-    if (pathname.startsWith("/operations") && workspace !== "operations") setWorkspace("operations");
-    if (pathname.startsWith("/reports") && workspace !== "reports") setWorkspace("reports");
+    if (shellWorkspace !== "admin") {
+      setWorkspace(shellWorkspace);
+    }
     setMenuOpen(false);
     setMoreOpen(false);
     setCaptureOpen(false);
-  }, [pathname, workspace, setWorkspace]);
+  }, [pathname, shellWorkspace, setWorkspace]);
 
-  const switchWorkspace = (w: Workspace) => {
-    setWorkspace(w);
-    router.push(workspaces.find((x) => x.id === w)!.path);
-  };
-
-  const onPersona = (p: Persona) => {
-    setPersona(p);
-    if (p === "operations") router.push("/operations");
-    else if (p === "leadership") router.push("/reports");
-    else if (p === "b2b") router.push("/b2b");
+  const switchWorkspace = (w: ShellWorkspace) => {
+    const target = ALL_WORKSPACES.find((x) => x.id === w);
+    if (target) router.push(target.path);
   };
 
   const goCapture = (target: "cardx" | "schedule" | "photo") => {
@@ -188,13 +214,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="mx-auto flex h-12 max-w-[1400px] items-center justify-between gap-3 px-3 sm:px-4">
           <div className="flex min-w-0 items-center gap-2 sm:gap-4">
             <button
-              className="rounded-lg p-1.5 text-white/80 hover:bg-white/10 lg:hidden"
+              className="min-h-11 min-w-11 rounded-lg p-1.5 text-white/80 hover:bg-white/10 lg:hidden"
               onClick={() => setMenuOpen(true)}
               aria-label="Open menu"
             >
               <Menu className="h-5 w-5" />
             </button>
-            <Link href="/" className="flex shrink-0 items-baseline gap-1.5">
+            <Link href={workspaces[0]?.path || "/b2b"} className="flex shrink-0 items-baseline gap-1.5">
               <span className="font-[family-name:var(--font-display)] text-sm font-bold tracking-tight">
                 uGSOT
               </span>
@@ -204,10 +230,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               {workspaces.map((w) => (
                 <button
                   key={w.id}
+                  type="button"
                   onClick={() => switchWorkspace(w.id)}
                   className={cn(
-                    "rounded-full px-3 py-1 text-xs font-semibold transition duration-150",
-                    workspace === w.id
+                    "min-h-9 rounded-full px-3 py-1 text-xs font-semibold transition duration-150",
+                    shellWorkspace === w.id
                       ? "bg-[#e31c24] text-white"
                       : "text-white/65 hover:bg-white/10 hover:text-white"
                   )}
@@ -219,24 +246,22 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="hidden text-right text-[10px] text-white/40 lg:block">
-              <div>{consultants.length.toLocaleString()} records</div>
-              <div>as of demo</div>
+              <div>{consultants.length.toLocaleString()} consultants</div>
+              <div>{user?.role?.replace("_", " ")}</div>
             </div>
-            <select
-              value={persona}
-              onChange={(e) => onPersona(e.target.value as Persona)}
-              aria-label="Demo persona"
-              className="h-8 max-w-[7.5rem] rounded-lg border border-white/15 bg-[#222222] px-2 text-[11px] text-white outline-none sm:max-w-none"
-            >
-              <option value="b2b">B2B Member</option>
-              <option value="operations">Operations</option>
-              <option value="leadership">Leadership</option>
-              <option value="admin">Admin</option>
-            </select>
             <div className="hidden text-right sm:block">
-              <div className="max-w-[8rem] truncate text-xs font-medium">{user?.name}</div>
-              <div className="text-[10px] text-white/40">{user?.role}</div>
+              <div className="max-w-[10rem] truncate text-xs font-medium">{user?.name}</div>
+              <div className="truncate text-[10px] text-white/40">{user?.email}</div>
             </div>
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-white/15 text-white/80 hover:bg-white/10"
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
           </div>
         </div>
 
@@ -245,10 +270,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             {workspaces.map((w) => (
               <button
                 key={w.id}
+                type="button"
                 onClick={() => switchWorkspace(w.id)}
                 className={cn(
-                  "shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition",
-                  workspace === w.id ? "bg-[#e31c24] text-white" : "bg-white/10 text-white/75"
+                  "min-h-10 shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition",
+                  shellWorkspace === w.id ? "bg-[#e31c24] text-white" : "bg-white/10 text-white/75"
                 )}
               >
                 {w.short}
@@ -260,34 +286,36 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <Sheet open={menuOpen} onOpenChange={setMenuOpen} title="Navigation" side="left">
         <div className="px-2 pb-2 text-xs text-[#6b6b6b]">
-          {user?.name} · {user?.role}
+          {user?.name} · {user?.email}
         </div>
         <Separator className="mb-2" />
-        <div className="mb-3 px-1 md:hidden">
-          <div className="label-micro mb-1.5 px-2">Workspace</div>
-          <div className="flex flex-col gap-0.5">
-            {workspaces.map((w) => (
-              <button
-                key={w.id}
-                type="button"
-                onClick={() => {
-                  switchWorkspace(w.id);
-                  setMenuOpen(false);
-                }}
-                className={cn(
-                  "rounded-xl px-2.5 py-2 text-left text-sm",
-                  workspace === w.id
-                    ? "bg-[#fdecec] font-semibold text-[#e31c24]"
-                    : "text-[#6b6b6b] hover:bg-[#fafafa]"
-                )}
-              >
-                {w.label}
-              </button>
-            ))}
+        {workspaces.length > 1 && (
+          <div className="mb-3 px-1 md:hidden">
+            <div className="label-micro mb-1.5 px-2">Workspace</div>
+            <div className="flex flex-col gap-0.5">
+              {workspaces.map((w) => (
+                <button
+                  key={w.id}
+                  type="button"
+                  onClick={() => {
+                    switchWorkspace(w.id);
+                    setMenuOpen(false);
+                  }}
+                  className={cn(
+                    "min-h-11 rounded-xl px-2.5 py-2 text-left text-sm",
+                    shellWorkspace === w.id
+                      ? "bg-[#fdecec] font-semibold text-[#e31c24]"
+                      : "text-[#6b6b6b] hover:bg-[#fafafa]"
+                  )}
+                >
+                  {w.label}
+                </button>
+              ))}
+            </div>
+            <Separator className="my-3" />
           </div>
-          <Separator className="my-3" />
-        </div>
-        {workspace === "operations"
+        )}
+        {shellWorkspace === "operations"
           ? opsGroups.map((g) => (
               <div key={g.label} className="mb-3">
                 <div className="label-micro mb-1 px-2.5">{g.label}</div>
@@ -309,6 +337,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                 onNavigate={() => setMenuOpen(false)}
               />
             ))}
+        <Separator className="my-3" />
+        <button
+          type="button"
+          onClick={() => void logout()}
+          className="flex min-h-11 w-full items-center gap-2 rounded-xl px-2.5 py-2 text-sm font-semibold text-[#e31c24]"
+        >
+          <LogOut className="h-4 w-4" /> Sign out
+        </button>
       </Sheet>
 
       <Sheet open={moreOpen} onOpenChange={setMoreOpen} title="More" side="right">
@@ -324,45 +360,28 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <Sheet open={captureOpen} onOpenChange={setCaptureOpen} title="Quick capture" side="bottom">
         <div className="space-y-1 p-1 pb-4">
-          <button
-            type="button"
-            onClick={() => goCapture("cardx")}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-[#fafafa]"
-          >
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#fdecec] text-[#e31c24]">
-              <IdCard className="h-5 w-5" />
-            </span>
-            <span>
-              <span className="block text-sm font-semibold">Scan card</span>
-              <span className="text-xs text-[#6b6b6b]">Visiting card OCR assist</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => goCapture("schedule")}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-[#fafafa]"
-          >
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#111111] text-white">
-              <CalendarPlus className="h-5 w-5" />
-            </span>
-            <span>
-              <span className="block text-sm font-semibold">Schedule meeting</span>
-              <span className="text-xs text-[#6b6b6b]">New field meeting</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => goCapture("photo")}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-[#fafafa]"
-          >
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#fff4e8] text-[#b45309]">
-              <Camera className="h-5 w-5" />
-            </span>
-            <span>
-              <span className="block text-sm font-semibold">Add field photo</span>
-              <span className="text-xs text-[#6b6b6b]">Geotagged meeting evidence</span>
-            </span>
-          </button>
+          {(
+            [
+              { t: "cardx" as const, title: "Scan card", sub: "Visiting card OCR assist", Icon: IdCard, tone: "bg-[#fdecec] text-[#e31c24]" },
+              { t: "schedule" as const, title: "Schedule meeting", sub: "New field meeting", Icon: CalendarPlus, tone: "bg-[#111111] text-white" },
+              { t: "photo" as const, title: "Add field photo", sub: "Geotagged meeting evidence", Icon: Camera, tone: "bg-[#fff4e8] text-[#b45309]" },
+            ] as const
+          ).map((row) => (
+            <button
+              key={row.t}
+              type="button"
+              onClick={() => goCapture(row.t)}
+              className="flex min-h-14 w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-[#fafafa]"
+            >
+              <span className={cn("flex h-11 w-11 items-center justify-center rounded-xl", row.tone)}>
+                <row.Icon className="h-5 w-5" />
+              </span>
+              <span>
+                <span className="block text-sm font-semibold">{row.title}</span>
+                <span className="text-xs text-[#6b6b6b]">{row.sub}</span>
+              </span>
+            </button>
+          ))}
         </div>
       </Sheet>
 
@@ -370,13 +389,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         <aside className="sticky top-12 hidden h-[calc(100vh-3rem)] w-56 shrink-0 overflow-y-auto border-r border-[#e5e5e5] bg-white lg:block">
           <div className="px-3 py-4">
             <div className="label-micro mb-3 px-2">
-              {workspace === "b2b"
-                ? "B2B Portal View"
-                : workspace === "operations"
-                  ? "Operations View"
-                  : "Reports & Insights View"}
+              {shellWorkspace === "b2b"
+                ? "B2B Portal"
+                : shellWorkspace === "operations"
+                  ? "Operations"
+                  : shellWorkspace === "admin"
+                    ? "Super Admin"
+                    : "Reports"}
             </div>
-            {workspace === "operations" ? (
+            {shellWorkspace === "operations" ? (
               opsGroups.map((g) => (
                 <div key={g.label} className="mb-4">
                   <div className="label-micro mb-1 px-2.5">{g.label}</div>
@@ -408,11 +429,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <div className="fixed bottom-[5.75rem] right-3 z-50 flex w-[min(20rem,calc(100vw-5.5rem))] flex-col gap-2 sm:bottom-4 sm:right-4 lg:bottom-4 lg:right-4 lg:w-[min(20rem,calc(100vw-2rem))]">
         {toasts.map((t) => (
-          <div
-            key={t.id}
-            className="card-surface flex items-start gap-2 px-3.5 py-2.5"
-            role="status"
-          >
+          <div key={t.id} className="card-surface flex items-start gap-2 px-3.5 py-2.5" role="status">
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold">{t.title}</div>
               {t.description && <div className="text-xs text-[#6b6b6b]">{t.description}</div>}
@@ -421,7 +438,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <button
               type="button"
               aria-label="Dismiss"
-              className="shrink-0 rounded-md p-1 text-[#6b6b6b] hover:bg-[#f0f0f0]"
+              className="min-h-8 min-w-8 shrink-0 rounded-md p-1 text-[#6b6b6b] hover:bg-[#f0f0f0]"
               onClick={() => dismissToast(t.id)}
             >
               <X className="h-3.5 w-3.5" />
@@ -434,8 +451,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         <button
           type="button"
           onClick={() => setCaptureOpen(true)}
-          className="fixed bottom-[4.75rem] right-4 z-40 flex items-center gap-1.5 rounded-full bg-[#e31c24] py-3.5 pl-3.5 pr-4 text-white shadow-[0_8px_24px_rgba(227,28,36,0.35)] transition duration-150 hover:bg-[#c41820] active:scale-95 lg:hidden"
-          aria-label="Capture"
+          className="fixed bottom-[4.75rem] right-4 z-40 flex min-h-14 items-center gap-1.5 rounded-full bg-[#e31c24] py-3.5 pl-3.5 pr-4 text-white shadow-[0_8px_24px_rgba(227,28,36,0.35)] transition duration-150 hover:bg-[#c41820] active:scale-95 lg:hidden"
+          aria-label="Quick capture"
         >
           <Plus className="h-5 w-5" />
           <span className="text-xs font-bold tracking-wide">Capture</span>
@@ -451,13 +468,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex min-w-0 flex-1 flex-col items-center gap-0.5 px-1 py-2.5 text-[10px] font-semibold",
+                "flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center gap-0.5 px-1 py-2 text-[10px] font-semibold",
                 active ? "text-[#e31c24]" : "text-[#6b6b6b]"
               )}
             >
               <span
                 className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-xl",
+                  "flex h-9 w-9 items-center justify-center rounded-xl",
                   active && "bg-[#fdecec]"
                 )}
               >
@@ -471,9 +488,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button
             type="button"
             onClick={() => setMoreOpen(true)}
-            className="flex min-w-0 flex-1 flex-col items-center gap-0.5 px-1 py-2.5 text-[10px] font-semibold text-[#6b6b6b]"
+            className="flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center gap-0.5 px-1 py-2 text-[10px] font-semibold text-[#6b6b6b]"
           >
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl">
               <MoreHorizontal className="h-4 w-4" />
             </span>
             More

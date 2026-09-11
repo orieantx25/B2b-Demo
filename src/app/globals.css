@@ -171,3 +171,24 @@ table {
     padding-bottom: 4.5rem;
   }
 }
+
+/* Mobile-first B2B: 44px tap targets */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+/* Desktop Ops / Admin density */
+@media (min-width: 1024px) {
+  .ops-table-dense td,
+  .ops-table-dense th {
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+  }
+}

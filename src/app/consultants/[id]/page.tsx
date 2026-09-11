@@ -26,6 +26,7 @@ import { formatDate } from "@/lib/utils";
 import type { DocType } from "@/types";
 import type { GeoTag } from "@/lib/geo";
 import { ArrowLeft, MoreHorizontal } from "lucide-react";
+import { LegacyPortalModal, useLegacyPortal } from "@/components/legacy-portal-modal";
 
 const TAB_KEYS = [
   { value: "overview", label: "Overview" },
@@ -54,10 +55,9 @@ export default function Consultant360() {
   const activities = useAppStore((s) => s.activities);
 
   const requestMou = useAppStore((s) => s.requestMou);
-  const requestUtm = useAppStore((s) => s.requestUtm);
-  const createChildUtm = useAppStore((s) => s.createChildUtm);
-  const createCoupon = useAppStore((s) => s.createCoupon);
   const transferOwnership = useAppStore((s) => s.transferOwnership);
+  const legacy = useLegacyPortal();
+  const sendMarketingMaterial = useAppStore((s) => s.sendMarketingMaterial);
   const simulateFirstLead = useAppStore((s) => s.simulateFirstLead);
   const uploadDocument = useAppStore((s) => s.uploadDocument);
   const completeMeeting = useAppStore((s) => s.completeMeeting);
@@ -72,7 +72,6 @@ export default function Consultant360() {
   const [newOwner, setNewOwner] = useState("");
   const [reason, setReason] = useState("SPOC change");
   const [comments, setComments] = useState("");
-  const [couponCode, setCouponCode] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [cardxOpen, setCardxOpen] = useState(false);
   const [photoMeetingId, setPhotoMeetingId] = useState<string | null>(null);
@@ -158,19 +157,35 @@ export default function Consultant360() {
             More
           </Button>
           <div className="hidden flex-wrap gap-2 sm:flex">
-            <Button size="sm" variant="outline" onClick={() => requestUtm(c.id)}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                legacy.openLegacy({
+                  action: "utm",
+                  consultantCode: c.consultantCode,
+                  consultantName: c.name,
+                  counsellorCode: c.existingUtmCode,
+                })
+              }
+            >
               Request UTM
             </Button>
             <Button
               size="sm"
               variant="outline"
-              onClick={() => {
-                const code = `UGSOT${Date.now().toString().slice(-5)}`;
-                setCouponCode(code);
-                createCoupon(c.id, code);
-              }}
+              onClick={() =>
+                legacy.openLegacy({
+                  action: "coupon",
+                  consultantCode: c.consultantCode,
+                  consultantName: c.name,
+                })
+              }
             >
               Create Coupon
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => sendMarketingMaterial(c.id)}>
+              Send Marketing Material
             </Button>
             <Button size="sm" variant="outline" onClick={() => setCardxOpen(true)}>
               Scan card
@@ -193,7 +208,12 @@ export default function Consultant360() {
             type="button"
             className="w-full rounded-xl px-3 py-3 text-left text-sm font-semibold hover:bg-[#fafafa]"
             onClick={() => {
-              requestUtm(c.id);
+              legacy.openLegacy({
+                action: "utm",
+                consultantCode: c.consultantCode,
+                consultantName: c.name,
+                counsellorCode: c.existingUtmCode,
+              });
               setMoreOpen(false);
             }}
           >
@@ -203,13 +223,25 @@ export default function Consultant360() {
             type="button"
             className="w-full rounded-xl px-3 py-3 text-left text-sm font-semibold hover:bg-[#fafafa]"
             onClick={() => {
-              const code = `UGSOT${Date.now().toString().slice(-5)}`;
-              setCouponCode(code);
-              createCoupon(c.id, code);
+              legacy.openLegacy({
+                action: "coupon",
+                consultantCode: c.consultantCode,
+                consultantName: c.name,
+              });
               setMoreOpen(false);
             }}
           >
             Create Coupon
+          </button>
+          <button
+            type="button"
+            className="w-full rounded-xl px-3 py-3 text-left text-sm font-semibold hover:bg-[#fafafa]"
+            onClick={() => {
+              sendMarketingMaterial(c.id);
+              setMoreOpen(false);
+            }}
+          >
+            Send Marketing Material
           </button>
           <button
             type="button"
@@ -440,12 +472,23 @@ export default function Consultant360() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold">UTMs</h3>
-                <Button size="sm" variant="outline" onClick={() => requestUtm(c.id)}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    legacy.openLegacy({
+                      action: "utm",
+                      consultantCode: c.consultantCode,
+                      consultantName: c.name,
+                      counsellorCode: c.existingUtmCode,
+                    })
+                  }
+                >
                   Request UTM
                 </Button>
               </div>
               <p className="text-xs text-[#6b6b6b]">
-                UTM may be requested before or after MOU. Source: Existing UTM System.
+                Create UTM opens the Admin Portal (synced records stay here). Source: Existing UTM System.
               </p>
               {cUtms.length === 0 ? (
                 <EmptyState title="No UTMs yet" description="Request a UTM to map counsellor codes." />
@@ -463,7 +506,19 @@ export default function Consultant360() {
                       <SourceTag>{u.source}</SourceTag>
                     </div>
                     {!u.parentUtmId && (
-                      <Button size="sm" variant="outline" onClick={() => createChildUtm(c.id, u.id)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          legacy.openLegacy({
+                            action: "child_utm",
+                            consultantCode: c.consultantCode,
+                            consultantName: c.name,
+                            counsellorCode: u.counsellorCode,
+                            parentUtmCode: u.code,
+                          })
+                        }
+                      >
                         Create child UTM
                       </Button>
                     )}
@@ -477,17 +532,22 @@ export default function Consultant360() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => {
-                    const code = `UGSOT${Date.now().toString().slice(-5)}`;
-                    setCouponCode(code);
-                    createCoupon(c.id, code);
-                  }}
+                  onClick={() =>
+                    legacy.openLegacy({
+                      action: "coupon",
+                      consultantCode: c.consultantCode,
+                      consultantName: c.name,
+                    })
+                  }
                 >
                   Create Coupon
                 </Button>
               </div>
               {cCoupons.length === 0 ? (
-                <EmptyState title="No coupons yet" description="Create a coupon for this consultant." />
+                <EmptyState
+                  title="No coupons yet"
+                  description="Synced coupons appear here after Admin Portal create."
+                />
               ) : (
                 cCoupons.map((cp) => {
                   const creator = members.find((m) => m.id === cp.createdBy);
@@ -501,7 +561,6 @@ export default function Consultant360() {
                   );
                 })
               )}
-              {couponCode && <p className="text-xs text-[#6b6b6b]">Last created: {couponCode}</p>}
             </div>
           </div>
         </TabsContent>
@@ -747,6 +806,16 @@ export default function Consultant360() {
           </Button>
         </div>
       </Modal>
+
+      <LegacyPortalModal
+        open={legacy.open}
+        onClose={legacy.closeLegacy}
+        action={legacy.action}
+        consultantCode={legacy.consultantCode}
+        consultantName={legacy.consultantName}
+        counsellorCode={legacy.counsellorCode}
+        parentUtmCode={legacy.parentUtmCode}
+      />
     </div>
   );
 }

@@ -63,14 +63,40 @@ export interface Meeting {
   createdAt: string;
 }
 
+export interface EventInvite {
+  memberId?: string;
+  email: string;
+  name: string;
+  status: "Invited" | "Accepted" | "Declined";
+}
+
+export interface EventDataFile {
+  id: string;
+  name: string;
+  uploadedAt: string;
+  kind: "schedule" | "attendance" | "collateral" | "other";
+}
+
+export type EventType = "Career Fair" | "Partner Meet" | "Training" | "Coschedule" | "Other";
+
 export interface EventItem {
   id: string;
   name: string;
   date: string;
+  /** Local time HH:MM — blocks meeting create in this window */
+  startTime: string;
+  endTime: string;
   location: string;
   notes?: string;
   ownerId: string;
+  type: EventType;
   photos?: string[];
+  invites: EventInvite[];
+  /** Uploaded schedule / career-fair timetable (filename stub) */
+  scheduleFileName?: string;
+  scheduleUploadedAt?: string;
+  /** Event-wise uploaded data packs */
+  eventData: EventDataFile[];
   createdAt: string;
 }
 
@@ -120,6 +146,22 @@ export interface Consultant {
   incompleteProfile?: boolean;
   createdAt: string;
   updatedAt: string;
+  /** When marketing/training pack was emailed to partner */
+  materialsSharedAt?: string;
+  materialsSharedVia?: "auto_signed" | "manual";
+  /** Partner channel — used for school vs coaching targets (Admin/Reports only) */
+  partnerKind?: "School" | "Coaching" | "Other";
+}
+
+/** Per-user field targets — Admin sets; Reports show achievement. Never shown on B2B UI. */
+export interface UserTargets {
+  userId: string;
+  schools: number;
+  consultants: number;
+  meetings: number;
+  coachings: number;
+  updatedAt: string;
+  updatedBy?: string;
 }
 
 export interface MouRequest {
@@ -271,5 +313,6 @@ export interface AppState {
   mergeRequests: MergeRequest[];
   activities: ActivityItem[];
   weeklyReports: WeeklyReport[];
+  userTargets: UserTargets[];
   toasts: ToastItem[];
 }

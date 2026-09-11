@@ -27,6 +27,7 @@ export default function ConsultantsPage() {
   const createConsultant = useAppStore((s) => s.createConsultant);
   const findDuplicates = useAppStore((s) => s.findDuplicates);
   const requestMerge = useAppStore((s) => s.requestMerge);
+  const sendMarketingMaterial = useAppStore((s) => s.sendMarketingMaterial);
   const addToast = useAppStore((s) => s.addToast);
 
   const [q, setQ] = useState("");
@@ -151,33 +152,49 @@ export default function ConsultantsPage() {
             {list.map((c) => {
               const owner = members.find((m) => m.id === c.ownerId);
               return (
-                <Link key={c.id} href={`/consultants/${c.id}`} className="block card-surface p-3.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold">{c.name}</div>
-                      <div className="mt-0.5 text-xs text-[#6b6b6b]">
-                        {c.organization} · {owner?.name}
+                <div key={c.id} className="card-surface p-3.5">
+                  <Link href={`/consultants/${c.id}`} className="block">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold">{c.name}</div>
+                        <div className="mt-0.5 text-xs text-[#6b6b6b]">
+                          {c.organization} · {owner?.name}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <Badge tone={StatusTone(c.status)}>{c.status}</Badge>
+                        {c.incompleteProfile && <Badge tone="warn">Incomplete</Badge>}
                       </div>
                     </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <Badge tone={StatusTone(c.status)}>{c.status}</Badge>
-                      {c.incompleteProfile && <Badge tone="warn">Incomplete</Badge>}
-                    </div>
-                  </div>
-                </Link>
+                  </Link>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-3 min-h-11 w-full"
+                    onClick={() => sendMarketingMaterial(c.id)}
+                  >
+                    Send Marketing Material
+                  </Button>
+                  {c.materialsSharedAt && (
+                    <p className="mt-1 text-[10px] text-[#6b6b6b]">
+                      Last shared {c.materialsSharedVia === "auto_signed" ? "(auto on signed)" : "(manual)"}
+                    </p>
+                  )}
+                </div>
               );
             })}
           </div>
 
           <div className="hidden overflow-x-auto card-surface sm:block">
-            <table className="w-full min-w-[800px] text-left text-sm">
-              <thead className="bg-[#fafafa] text-[11px] font-semibold uppercase tracking-wide text-[#444]">
+            <table className="w-full min-w-[920px] text-left text-sm">
+              <thead className="sticky top-0 bg-[#fafafa] text-[11px] font-semibold uppercase tracking-wide text-[#444]">
                 <tr>
                   <th className="px-3 py-2.5">Consultant</th>
                   <th className="px-3 py-2.5">Org</th>
                   <th className="px-3 py-2.5">Owner</th>
                   <th className="px-3 py-2.5">Status</th>
                   <th className="px-3 py-2.5">MOU</th>
+                  <th className="px-3 py-2.5">Materials</th>
                 </tr>
               </thead>
               <tbody>
@@ -201,6 +218,11 @@ export default function ConsultantsPage() {
                       <Badge tone={StatusTone(c.status)}>{c.status}</Badge>
                     </td>
                     <td className="px-3 py-2.5 text-xs">{c.mouStatus}</td>
+                    <td className="px-3 py-2.5">
+                      <Button size="sm" variant="outline" onClick={() => sendMarketingMaterial(c.id)}>
+                        Send Marketing Material
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

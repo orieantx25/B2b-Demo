@@ -8,10 +8,12 @@ import { Badge, Button, Kpi, KpiSection, PageHeader, Panel, StatusTone } from "@
 import { CardxActionTile, CardxUpload, type CardxExtract } from "@/components/cardx-upload";
 import { formatDate } from "@/lib/utils";
 import { Calendar, CalendarPlus, Camera, ChevronRight, AlertCircle } from "lucide-react";
+import { useAuth } from "@/components/auth-provider";
 
 function B2BOverviewInner() {
   const router = useRouter();
   const search = useSearchParams();
+  const { user: authUser } = useAuth();
   const meetings = useAppStore((s) => s.meetings);
   const consultants = useAppStore((s) => s.consultants);
   const mous = useAppStore((s) => s.mous);
@@ -90,7 +92,7 @@ function B2BOverviewInner() {
             B2B Portal
           </p>
           <h1 className="section-title mt-1 text-2xl text-[#111111]">
-            Hi{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
+            Hi{authUser?.name || user?.name ? `, ${(authUser?.name || user?.name)!.split(" ")[0]}` : ""}
           </h1>
           <p className="mt-1 text-sm text-[#6b6b6b]">Capture once — keep the pipeline moving.</p>
         </div>
@@ -264,7 +266,7 @@ function B2BOverviewInner() {
       <div className="hidden lg:block">
         <PageHeader
           title="B2B Overview"
-          subtitle="Your consultant pipeline — capture once, move forward."
+          subtitle={`${authUser?.name || user?.name || "Your"} pipeline — capture once, move forward.`}
           actions={
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => setCardxOpen(true)}>
