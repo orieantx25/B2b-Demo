@@ -41,7 +41,11 @@ export async function POST(req: Request) {
     role: profile.role,
     region: profile.region,
   });
-  await setSessionCookie(token);
+  await setSessionCookie(token, {
+    role: profile.role,
+    name: profile.name,
+    email: profile.email,
+  });
 
   return NextResponse.json({
     ok: true,

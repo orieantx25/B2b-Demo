@@ -7,17 +7,21 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ user: null }, { status: 401 });
   }
+
+  // Prefer JWT session for identity so Vercel serverless instances don't
+  // 401 when the in-memory profile store was cold-started elsewhere.
   const profile = await getProfileById(session.userId);
-  if (!profile || !profile.active) {
+  if (profile && !profile.active) {
     return NextResponse.json({ user: null }, { status: 401 });
   }
+
   return NextResponse.json({
     user: {
-      id: profile.id,
-      email: profile.email,
-      name: profile.name,
-      role: profile.role,
-      region: profile.region,
+      id: session.userId,
+      email: session.email,
+      name: profile?.name || session.name,
+      role: (profile?.role || session.role) as typeof session.role,
+      region: profile?.region || session.region,
     },
   });
 }

@@ -1,10 +1,10 @@
 "use client";
 
 import { FormEvent, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { persistAuthUser } from "@/components/auth-provider";
 
 function LoginForm() {
-  const router = useRouter();
   const search = useSearchParams();
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
@@ -18,6 +18,7 @@ function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ email }),
       });
       const data = await res.json();
@@ -25,12 +26,12 @@ function LoginForm() {
         setError(data.error || "Login failed");
         return;
       }
+      if (data.user) persistAuthUser(data.user);
       const next = search.get("next");
-      router.replace(next && next.startsWith("/") ? next : data.redirectTo || "/b2b");
-      router.refresh();
+      // Hard navigate so cookies + auth bootstrap apply on Vercel
+      window.location.href = next && next.startsWith("/") ? next : data.redirectTo || "/b2b";
     } catch {
       setError("Network error — try again");
-    } finally {
       setBusy(false);
     }
   };

@@ -167,9 +167,12 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const shellWorkspace = detectWorkspace(pathname);
   const role = (user?.role || "b2b_member") as AppRole;
-  const isElevatedAdmin = role === "super_admin" || role === "admin";
+  // Path fallback: if middleware let them into /admin, they are elevated even before /me resolves
+  const isElevatedAdmin =
+    role === "super_admin" ||
+    role === "admin" ||
+    pathname.startsWith("/admin");
   const workspaces = useMemo(() => {
-    // Super Admin / Admin always keep every workspace switcher entry
     if (isElevatedAdmin) return ALL_WORKSPACES;
     const allowed = allowedWorkspaces(role);
     return ALL_WORKSPACES.filter((w) => allowed.includes(w.id));
@@ -188,8 +191,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const showB2bCapture =
     shellWorkspace === "b2b" &&
     (pathname.startsWith("/b2b") || pathname.startsWith("/consultants/"));
-  // Always show workspace chips for multi-view roles (incl. on B2B) so Super Admin can switch anytime
-  const showMobileWorkspaceChips = workspaces.length > 1;
+  const showWorkspaceBar = workspaces.length > 1;
 
   useEffect(() => {
     if (shellWorkspace !== "admin") {
@@ -230,31 +232,14 @@ export function AppShell({ children }: { children: ReactNode }) {
               </span>
               <span className="hidden text-[11px] text-white/45 sm:inline">B2B Ops</span>
             </Link>
-            <nav className="hidden items-center gap-1 sm:flex" aria-label="Workspace views">
-              {workspaces.map((w) => (
-                <button
-                  key={w.id}
-                  type="button"
-                  onClick={() => switchWorkspace(w.id)}
-                  className={cn(
-                    "min-h-9 rounded-full px-3 py-1 text-xs font-semibold transition duration-150",
-                    shellWorkspace === w.id
-                      ? "bg-[#e31c24] text-white"
-                      : "text-white/65 hover:bg-white/10 hover:text-white"
-                  )}
-                >
-                  {w.label}
-                </button>
-              ))}
-            </nav>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="hidden text-right text-[10px] text-white/40 lg:block">
               <div>{consultants.length.toLocaleString()} consultants</div>
-              <div>{user?.role?.replace("_", " ")}</div>
+              <div>{user?.role?.replace(/_/g, " ") || "…"}</div>
             </div>
             <div className="hidden text-right sm:block">
-              <div className="max-w-[10rem] truncate text-xs font-medium">{user?.name}</div>
+              <div className="max-w-[10rem] truncate text-xs font-medium">{user?.name || "Signed in"}</div>
               <div className="truncate text-[10px] text-white/40">{user?.email}</div>
             </div>
             <button
@@ -269,8 +254,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        {showMobileWorkspaceChips && (
-          <div className="flex gap-1.5 overflow-x-auto border-t border-white/10 px-3 py-2 md:hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {/* Always-visible workspace switcher (fixes Vercel Super Admin missing B2B/Ops/Reports) */}
+        {showWorkspaceBar && (
+          <div
+            className="flex gap-1.5 overflow-x-auto border-t border-white/10 px-3 py-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            aria-label="Workspace views"
+          >
             {workspaces.map((w) => (
               <button
                 key={w.id}
@@ -281,7 +270,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   shellWorkspace === w.id ? "bg-[#e31c24] text-white" : "bg-white/10 text-white/75"
                 )}
               >
-                {w.short}
+                {w.label}
               </button>
             ))}
           </div>
@@ -392,7 +381,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </Sheet>
 
       <div className="mx-auto flex max-w-[1400px]">
-        <aside className="sticky top-12 hidden h-[calc(100vh-3rem)] w-56 shrink-0 overflow-y-auto border-r border-[#e5e5e5] bg-white lg:block">
+        <aside className="sticky top-[5.5rem] hidden h-[calc(100vh-5.5rem)] w-56 shrink-0 overflow-y-auto border-r border-[#e5e5e5] bg-white lg:block">
           <div className="px-3 py-4">
             <div className="label-micro mb-3 px-2">
               {shellWorkspace === "b2b"

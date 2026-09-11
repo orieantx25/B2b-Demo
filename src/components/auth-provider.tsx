@@ -35,24 +35,59 @@ const Ctx = createContext<AuthCtx>({
   logout: async () => {},
 });
 
+const STORAGE_KEY = "ugsot_auth_user";
+
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]!) : null;
+}
+
+function readBootstrapUser(): AuthUser | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as AuthUser;
+  } catch {
+    /* ignore */
+  }
+  const role = readCookie("ugsot_role") as AppRole | null;
+  if (!role) return null;
+  let name = "";
+  let email = "";
+  try {
+    const packed = readCookie("ugsot_user");
+    if (packed) {
+      const parsed = JSON.parse(packed) as { name?: string; email?: string };
+      name = parsed.name || "";
+      email = parsed.email || "";
+    }
+  } catch {
+    /* ignore */
+  }
+  return {
+    id: "session",
+    email,
+    name: name || "User",
+    role,
+    region: "NCR",
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const setPersona = useAppStore((s) => s.setPersona);
-  const members = useAppStore((s) => s.members);
 
   const syncStoreUser = useCallback(
     (u: AuthUser) => {
-      // Map auth role → store persona for existing filters
       if (u.role === "operations") setPersona("operations");
       else if (u.role === "leadership") setPersona("leadership");
       else if (u.role === "admin" || u.role === "super_admin") setPersona("admin");
       else setPersona("b2b");
 
-      // Ensure profile id exists in members so currentUserId filters work
       const store = useAppStore.getState();
       const exists = store.members.some((m) => m.id === u.id);
-      if (!exists) {
+      if (!exists && u.id !== "session") {
         useAppStore.setState({
           members: [
             {
@@ -66,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ],
           currentUserId: u.id,
         });
-      } else {
+      } else if (u.id !== "session") {
         useAppStore.setState({ currentUserId: u.id });
       }
     },
@@ -74,28 +109,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const refresh = useCallback(async () => {
+    // Instant UI from cookie / sessionStorage so workspace chips appear on Vercel
+    const boot = readBootstrapUser();
+    if (boot) {
+      setUser(boot);
+      syncStoreUser(boot);
+      setLoading(false);
+    }
+
     try {
-      const res = await fetch("/api/auth/me");
+      const res = await fetch("/api/auth/me", { credentials: "include", cache: "no-store" });
       if (!res.ok) {
-        setUser(null);
+        if (!boot) setUser(null);
         return;
       }
       const data = await res.json();
       if (data.user) {
         setUser(data.user);
         syncStoreUser(data.user);
-      } else {
+        try {
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data.user));
+        } catch {
+          /* ignore */
+        }
+      } else if (!boot) {
         setUser(null);
       }
     } catch {
-      setUser(null);
+      if (!boot) setUser(null);
     } finally {
       setLoading(false);
     }
   }, [syncStoreUser]);
 
   const logout = useCallback(async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
+    try {
+      sessionStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
     setUser(null);
     window.location.href = "/login";
   }, []);
@@ -103,14 +156,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
-
-  // Keep role labels consistent if members hydrate later
-  useEffect(() => {
-    if (!user || !members.length) return;
-    if (!members.some((m) => m.id === user.id)) {
-      syncStoreUser(user);
-    }
-  }, [members, user, syncStoreUser]);
 
   const value = useMemo(
     () => ({ user, loading, refresh, logout }),
@@ -124,7 +169,14 @@ export function useAuth() {
   return useContext(Ctx);
 }
 
-/** Helper for demos — unused import guard */
 export function roleFromMember(role: Parameters<typeof fromLegacyRole>[0]) {
   return fromLegacyRole(role);
+}
+
+export function persistAuthUser(user: AuthUser) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+  } catch {
+    /* ignore */
+  }
 }
