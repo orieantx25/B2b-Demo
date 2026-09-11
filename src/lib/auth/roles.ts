@@ -135,13 +135,26 @@ export const ACCESS_MATRIX: {
     role: "super_admin",
     label: "Super Admin",
     workspaces: ["Admin", "B2B", "Operations", "Reports"],
-    capabilities: ["Manage users & roles", "All domain actions", "Settings", "Audit"],
+    capabilities: [
+      "Manage users & roles",
+      "Set user targets",
+      "All domain actions",
+      "Switch B2B / Ops / Reports / Admin",
+      "Settings",
+      "Audit",
+    ],
   },
   {
     role: "admin",
     label: "Admin",
     workspaces: ["Admin", "B2B", "Operations", "Reports"],
-    capabilities: ["Manage users", "Ownership transfer", "All queues"],
+    capabilities: [
+      "Manage users",
+      "Set user targets",
+      "Ownership transfer",
+      "All queues",
+      "Switch B2B / Ops / Reports / Admin",
+    ],
   },
   {
     role: "b2b_member",

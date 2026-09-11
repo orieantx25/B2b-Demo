@@ -98,8 +98,8 @@ const adminNav: NavItem[] = [
 ];
 
 const ALL_WORKSPACES: { id: ShellWorkspace; label: string; short: string; path: string }[] = [
-  { id: "b2b", label: "B2B Portal", short: "B2B", path: "/b2b" },
-  { id: "operations", label: "Operations", short: "Ops", path: "/operations" },
+  { id: "b2b", label: "B2B", short: "B2B", path: "/b2b" },
+  { id: "operations", label: "Ops", short: "Ops", path: "/operations" },
   { id: "reports", label: "Reports", short: "Reports", path: "/reports" },
   { id: "admin", label: "Admin", short: "Admin", path: "/admin" },
 ];
@@ -167,10 +167,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const shellWorkspace = detectWorkspace(pathname);
   const role = (user?.role || "b2b_member") as AppRole;
+  const isElevatedAdmin = role === "super_admin" || role === "admin";
   const workspaces = useMemo(() => {
+    // Super Admin / Admin always keep every workspace switcher entry
+    if (isElevatedAdmin) return ALL_WORKSPACES;
     const allowed = allowedWorkspaces(role);
     return ALL_WORKSPACES.filter((w) => allowed.includes(w.id));
-  }, [role]);
+  }, [role, isElevatedAdmin]);
 
   const flatNav =
     shellWorkspace === "b2b"
@@ -185,7 +188,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const showB2bCapture =
     shellWorkspace === "b2b" &&
     (pathname.startsWith("/b2b") || pathname.startsWith("/consultants/"));
-  const showMobileWorkspaceChips = workspaces.length > 1 && shellWorkspace !== "b2b";
+  // Always show workspace chips for multi-view roles (incl. on B2B) so Super Admin can switch anytime
+  const showMobileWorkspaceChips = workspaces.length > 1;
 
   useEffect(() => {
     if (shellWorkspace !== "admin") {
@@ -226,7 +230,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </span>
               <span className="hidden text-[11px] text-white/45 sm:inline">B2B Ops</span>
             </Link>
-            <nav className="hidden items-center gap-1 md:flex" aria-label="Workspace views">
+            <nav className="hidden items-center gap-1 sm:flex" aria-label="Workspace views">
               {workspaces.map((w) => (
                 <button
                   key={w.id}
@@ -290,8 +294,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         <Separator className="mb-2" />
         {workspaces.length > 1 && (
-          <div className="mb-3 px-1 md:hidden">
-            <div className="label-micro mb-1.5 px-2">Workspace</div>
+          <div className="mb-3 px-1">
+            <div className="label-micro mb-1.5 px-2">
+              {isElevatedAdmin ? "All views" : "Workspace"}
+            </div>
             <div className="flex flex-col gap-0.5">
               {workspaces.map((w) => (
                 <button
