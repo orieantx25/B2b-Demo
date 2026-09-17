@@ -26,35 +26,36 @@ export default function B2BMouPage() {
   );
 
   const summary = useMemo(() => {
-    const count = (pred: (s: string) => boolean) => rows.filter((m) => pred(m.status)).length;
-    return {
-      total: rows.length,
-      requested: count((s) => s === "Requested"),
-      verification: count((s) => s === "Verification"),
-      rework: count((s) => s === "Rework"),
-      inProgress: count((s) =>
-        ["Approved", "WO Generated", "WO Sent", "Awaiting Signature", "Legal Review", "Finance Approval"].includes(s)
-      ),
-      signed: count((s) => s === "Signed"),
-    };
+    const needsYou = rows.filter((m) =>
+      ["Rework", "Requested", "Verification"].includes(m.status)
+    ).length;
+    const inProgress = rows.filter((m) =>
+      [
+        "Approved",
+        "WO Generated",
+        "WO Sent",
+        "Awaiting Signature",
+        "Legal Review",
+        "Finance Approval",
+      ].includes(m.status)
+    ).length;
+    const signed = rows.filter((m) => m.status === "Signed").length;
+    return { needsYou, inProgress, signed, total: rows.length };
   }, [rows]);
 
   return (
     <div className="animate-in pb-8 sm:pb-16">
       <PageHeader
         title="MOU / WO"
-        subtitle="Your consultant MOU pipeline — rework shows as Action required."
+        subtitle="Needs you · In progress · Signed — one action per request."
       />
 
-      <KpiSection title="My MOU status">
-        <Kpi label="Total" value={summary.total} tone="ink" />
-        <Kpi label="Requested" value={summary.requested} tone="blue" />
-        <Kpi label="Verification" value={summary.verification} tone="violet" />
+      <KpiSection title="Status">
         <Kpi
-          label="Rework"
-          value={summary.rework}
+          label="Needs you"
+          value={summary.needsYou}
           tone="amber"
-          hint={summary.rework ? "Action required" : "All clear"}
+          hint="Rework · requested · verification"
         />
         <Kpi label="In progress" value={summary.inProgress} tone="blue" hint="WO · signature · approvals" />
         <Kpi label="Signed" value={summary.signed} tone="green" />
@@ -63,7 +64,7 @@ export default function B2BMouPage() {
       <div className="mb-3 flex items-center gap-2.5">
         <span className="h-5 w-[3px] shrink-0 rounded-full bg-[#e31c24]" />
         <h2 className="section-title text-[1.05rem] text-[#111111]">Requests</h2>
-        <span className="text-xs text-[#6b6b6b] tabular-nums">{rows.length} shown</span>
+        <span className="text-xs text-[#6b6b6b] tabular-nums">{summary.total}</span>
       </div>
 
       <div className="space-y-3">
@@ -80,42 +81,30 @@ export default function B2BMouPage() {
         )}
         {rows.slice(0, 40).map((m) => {
           const c = consultants.find((x) => x.id === m.consultantId);
+          const isRework = m.status === "Rework";
           return (
             <div key={m.id} className="card-surface p-4">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <Link
-                  href={`/consultants/${m.consultantId}`}
-                  className="font-semibold text-[#111111] hover:text-[#e31c24]"
-                >
-                  {c?.name}
-                </Link>
-                <div className="flex gap-2">
-                  <Badge tone={StatusTone(m.status)}>
-                    {m.status === "Rework" ? "Action required" : m.status}
-                  </Badge>
-                  <Badge tone={m.commercialType === "Standard" ? "lime" : "warn"}>
-                    {m.commercialType}
-                  </Badge>
+                <div className="min-w-0">
+                  <div className="font-semibold text-[#111111]">{c?.name}</div>
+                  <div className="text-xs text-[#6b6b6b]">Updated {formatDate(m.updatedAt)}</div>
                 </div>
+                <Badge tone={StatusTone(m.status)}>
+                  {isRework ? "Action required" : m.status}
+                </Badge>
               </div>
               <MouLifecycle status={m.status} />
-              {m.status === "Rework" && (
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-[#f0d2ad] bg-[#fff4e8] p-3 text-sm">
-                  <div>
-                    <div className="font-medium text-[#111111]">{m.reworkMessage}</div>
-                    <div className="text-xs text-[#6b6b6b]">
-                      Fix: {(m.reworkItems || []).join(", ")}
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={() => router.push(`/consultants/${m.consultantId}`)}
-                  >
-                    Fix rework — upload docs
-                  </Button>
-                </div>
+              {isRework && m.reworkMessage && (
+                <p className="mt-2 text-sm text-[#b45309]">{m.reworkMessage}</p>
               )}
-              <div className="mt-2 text-xs text-[#6b6b6b]">Updated {formatDate(m.updatedAt)}</div>
+              <div className="mt-3">
+                <Button
+                  size="sm"
+                  onClick={() => router.push(`/consultants/${m.consultantId}`)}
+                >
+                  {isRework ? "Fix rework" : "Open 360"}
+                </Button>
+              </div>
             </div>
           );
         })}

@@ -15,11 +15,9 @@ import {
   Users,
   FileText,
   Tag,
-  BarChart3,
   ClipboardList,
   AlertTriangle,
   GitMerge,
-  Shield,
   PieChart,
   TrendingUp,
   FileBarChart,
@@ -31,7 +29,6 @@ import {
   CalendarPlus,
   X,
   LogOut,
-  Settings,
   KeyRound,
   Target,
 } from "lucide-react";
@@ -48,7 +45,6 @@ const b2bNav: NavItem[] = [
   { href: "/b2b/consultants", label: "My Consultants", icon: Users, short: "Consultants" },
   { href: "/b2b/mou", label: "MOU / WO", icon: FileText, short: "MOU" },
   { href: "/b2b/utm", label: "UTM & Coupons", icon: Tag, short: "UTM" },
-  { href: "/b2b/performance", label: "My Performance", icon: BarChart3, short: "Perf" },
 ];
 
 const opsGroups: NavGroup[] = [
@@ -57,12 +53,10 @@ const opsGroups: NavGroup[] = [
     items: [{ href: "/operations", label: "Operations Overview", icon: LayoutDashboard, short: "Home" }],
   },
   {
-    label: "Queue & Verify",
+    label: "MOU / WO",
     items: [
       { href: "/operations/queue", label: "MOU / WO Queue", icon: ClipboardList, short: "Queue" },
-      { href: "/operations/verification", label: "Verification", icon: Shield, short: "Verify" },
-      { href: "/operations/rework", label: "Rework", icon: AlertTriangle, short: "Rework" },
-      { href: "/operations/signed", label: "Signed Documents", icon: FileText, short: "Signed" },
+      { href: "/operations/signed", label: "Approved tracking", icon: FileText, short: "Approved" },
     ],
   },
   {
@@ -70,7 +64,8 @@ const opsGroups: NavGroup[] = [
     items: [
       { href: "/operations/consultants", label: "Consultant Master", icon: Users, short: "Master" },
       { href: "/operations/ownership", label: "Ownership", icon: GitMerge, short: "Owner" },
-      { href: "/operations/utm", label: "UTM / Coupon Mapping", icon: Tag, short: "UTM" },
+      { href: "/operations/utm", label: "UTM & Coupons", icon: Tag, short: "UTM" },
+      { href: "/operations/targets", label: "User Targets", icon: Target, short: "Targets" },
     ],
   },
   {
@@ -86,15 +81,13 @@ const reportsNav: NavItem[] = [
   { href: "/reports/consultants", label: "Consultant Performance", icon: Users, short: "Cons." },
   { href: "/reports/mou", label: "MOU / WO Efficiency", icon: FileText, short: "MOU" },
   { href: "/reports/weekly", label: "Weekly Reports", icon: FileBarChart, short: "Weekly" },
+  { href: "/reports/consolidated", label: "Consolidated", icon: FileBarChart, short: "Pack" },
 ];
 
 const adminNav: NavItem[] = [
   { href: "/admin", label: "Admin Overview", icon: LayoutDashboard, short: "Home" },
   { href: "/admin/users", label: "Users & Roles", icon: Users, short: "Users" },
-  { href: "/admin/targets", label: "User Targets", icon: Target, short: "Targets" },
   { href: "/admin/access", label: "Access Matrix", icon: KeyRound, short: "Access" },
-  { href: "/admin/settings", label: "Settings", icon: Settings, short: "Settings" },
-  { href: "/admin/audit", label: "Audit", icon: FileBarChart, short: "Audit" },
 ];
 
 const ALL_WORKSPACES: { id: ShellWorkspace; label: string; short: string; path: string }[] = [
@@ -158,7 +151,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { user, logout } = useAuth();
   const setWorkspace = useAppStore((s) => s.setWorkspace);
-  const consultants = useAppStore((s) => s.consultants);
   const toasts = useAppStore((s) => s.toasts);
   const dismissToast = useAppStore((s) => s.dismissToast);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -214,65 +206,129 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (target === "photo") router.push("/b2b/meetings?photo=1");
   };
 
+  const workspaceLabel =
+    ALL_WORKSPACES.find((w) => w.id === shellWorkspace)?.label || "B2B";
+  const initials = (user?.name || "U")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]!.toUpperCase())
+    .join("");
+
   return (
     <div className="min-h-screen bg-[#f6f6f6] text-[#111111]">
-      <header className="sticky top-0 z-40 border-b border-[#222222] bg-[#111111] text-white shadow-[0_1px_2px_rgba(17,17,17,0.12)]">
-        <div className="mx-auto flex h-12 max-w-[1400px] items-center justify-between gap-3 px-3 sm:px-4">
-          <div className="flex min-w-0 items-center gap-2 sm:gap-4">
-            <button
-              className="min-h-11 min-w-11 rounded-lg p-1.5 text-white/80 hover:bg-white/10 lg:hidden"
-              onClick={() => setMenuOpen(true)}
-              aria-label="Open menu"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-            <Link href={workspaces[0]?.path || "/b2b"} className="flex shrink-0 items-baseline gap-1.5">
-              <span className="font-[family-name:var(--font-display)] text-sm font-bold tracking-tight">
+      <header className="sticky top-0 z-40 border-b border-black/80 bg-[#111111] text-white">
+        <div className="mx-auto flex max-w-[1400px] items-center gap-3 px-3 py-2.5 sm:px-5 sm:py-3">
+          <button
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-xl text-white/70 hover:bg-white/10 hover:text-white lg:hidden"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Open menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+
+          <Link
+            href={workspaces[0]?.path || "/b2b"}
+            className="group flex shrink-0 items-center gap-2.5"
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#e31c24] font-[family-name:var(--font-display)] text-[11px] font-bold tracking-tight text-white shadow-[0_0_0_1px_rgba(227,28,36,0.35)]">
+              uG
+            </span>
+            <span className="hidden min-w-0 flex-col leading-none sm:flex">
+              <span className="font-[family-name:var(--font-display)] text-[15px] font-bold tracking-tight">
                 uGSOT
               </span>
-              <span className="hidden text-[11px] text-white/45 sm:inline">B2B Ops</span>
-            </Link>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="hidden text-right text-[10px] text-white/40 lg:block">
-              <div>{consultants.length.toLocaleString()} consultants</div>
-              <div>{user?.role?.replace(/_/g, " ") || "…"}</div>
-            </div>
-            <div className="hidden text-right sm:block">
-              <div className="max-w-[10rem] truncate text-xs font-medium">{user?.name || "Signed in"}</div>
-              <div className="truncate text-[10px] text-white/40">{user?.email}</div>
+              <span className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">
+                {workspaceLabel}
+              </span>
+            </span>
+          </Link>
+
+          {showWorkspaceBar && (
+            <nav
+              className="ml-1 hidden min-w-0 flex-1 items-center justify-center md:flex"
+              aria-label="Workspace views"
+            >
+              <div className="inline-flex items-center gap-0.5 rounded-full border border-white/10 bg-white/[0.04] p-1">
+                {workspaces.map((w) => {
+                  const active = shellWorkspace === w.id;
+                  return (
+                    <button
+                      key={w.id}
+                      type="button"
+                      onClick={() => switchWorkspace(w.id)}
+                      aria-current={active ? "page" : undefined}
+                      className={cn(
+                        "relative min-h-9 rounded-full px-4 text-[12px] font-semibold transition duration-200",
+                        active
+                          ? "bg-[#e31c24] text-white shadow-[0_4px_14px_rgba(227,28,36,0.35)]"
+                          : "text-white/55 hover:bg-white/8 hover:text-white"
+                      )}
+                    >
+                      {w.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </nav>
+          )}
+
+          {!showWorkspaceBar && <div className="flex-1" />}
+
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            <div className="hidden items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.04] py-1 pl-1 pr-3 lg:flex">
+              <span
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 font-[family-name:var(--font-display)] text-[11px] font-bold text-white"
+                aria-hidden
+              >
+                {initials}
+              </span>
+              <div className="min-w-0 text-left leading-tight">
+                <div className="max-w-[9.5rem] truncate text-[12px] font-semibold">
+                  {user?.name || "Signed in"}
+                </div>
+                <div className="max-w-[9.5rem] truncate text-[10px] text-white/40">
+                  {user?.email || user?.role?.replace(/_/g, " ")}
+                </div>
+              </div>
             </div>
             <button
               type="button"
               onClick={() => void logout()}
-              className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-white/15 text-white/80 hover:bg-white/10"
-              aria-label="Sign out"
-              title="Sign out"
+              className="flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-white/12 text-white/70 transition hover:border-white/25 hover:bg-white/10 hover:text-white"
+              aria-label="Home"
+              title="Back to Overview"
             >
               <LogOut className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        {/* Always-visible workspace switcher (fixes Vercel Super Admin missing B2B/Ops/Reports) */}
+        {/* Mobile workspace strip — keeps Super Admin all-views reachable */}
         {showWorkspaceBar && (
           <div
-            className="flex gap-1.5 overflow-x-auto border-t border-white/10 px-3 py-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="flex gap-1.5 overflow-x-auto border-t border-white/[0.06] px-3 py-2 md:hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             aria-label="Workspace views"
           >
-            {workspaces.map((w) => (
-              <button
-                key={w.id}
-                type="button"
-                onClick={() => switchWorkspace(w.id)}
-                className={cn(
-                  "min-h-10 shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition",
-                  shellWorkspace === w.id ? "bg-[#e31c24] text-white" : "bg-white/10 text-white/75"
-                )}
-              >
-                {w.label}
-              </button>
-            ))}
+            {workspaces.map((w) => {
+              const active = shellWorkspace === w.id;
+              return (
+                <button
+                  key={w.id}
+                  type="button"
+                  onClick={() => switchWorkspace(w.id)}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "min-h-10 shrink-0 rounded-full px-3.5 text-xs font-semibold transition",
+                    active
+                      ? "bg-[#e31c24] text-white"
+                      : "bg-white/[0.06] text-white/65"
+                  )}
+                >
+                  {w.label}
+                </button>
+              );
+            })}
           </div>
         )}
       </header>
@@ -338,7 +394,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           onClick={() => void logout()}
           className="flex min-h-11 w-full items-center gap-2 rounded-xl px-2.5 py-2 text-sm font-semibold text-[#e31c24]"
         >
-          <LogOut className="h-4 w-4" /> Sign out
+          <LogOut className="h-4 w-4" /> Back to Overview
         </button>
       </Sheet>
 

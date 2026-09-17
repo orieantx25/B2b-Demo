@@ -137,11 +137,9 @@ export const ACCESS_MATRIX: {
     workspaces: ["Admin", "B2B", "Operations", "Reports"],
     capabilities: [
       "Manage users & roles",
-      "Set user targets",
+      "Access matrix",
       "All domain actions",
       "Switch B2B / Ops / Reports / Admin",
-      "Settings",
-      "Audit",
     ],
   },
   {
@@ -150,7 +148,7 @@ export const ACCESS_MATRIX: {
     workspaces: ["Admin", "B2B", "Operations", "Reports"],
     capabilities: [
       "Manage users",
-      "Set user targets",
+      "Access matrix",
       "Ownership transfer",
       "All queues",
       "Switch B2B / Ops / Reports / Admin",
@@ -172,12 +170,12 @@ export const ACCESS_MATRIX: {
     role: "operations",
     label: "Operations",
     workspaces: ["Operations"],
-    capabilities: ["Verify MOU", "Rework", "WO", "Exceptions"],
+    capabilities: ["Verify MOU", "Approved tracking", "User targets", "Exceptions", "Ownership"],
   },
   {
     role: "leadership",
     label: "Leadership",
     workspaces: ["Reports"],
-    capabilities: ["Executive KPIs", "Weekly review"],
+    capabilities: ["Executive KPIs", "Weekly review", "Targets vs achievement"],
   },
 ];

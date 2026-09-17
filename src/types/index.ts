@@ -164,6 +164,17 @@ export interface UserTargets {
   updatedBy?: string;
 }
 
+export interface MouOpsTrack {
+  /** Auto-set when Ops approves the MOU */
+  sentToLegalAt?: string;
+  /** Manual — Ops only */
+  financeApprovedAt?: string;
+  /** Manual — Ops only */
+  draftSharedAt?: string;
+  /** Manual — Ops only (WO / MoU sent to client) */
+  sentToClientAt?: string;
+}
+
 export interface MouRequest {
   id: string;
   consultantId: string;
@@ -187,6 +198,8 @@ export interface MouRequest {
   woSentAt?: string;
   signedAt?: string;
   slaDueAt: string;
+  /** Post-approval Ops milestones (visible on B2B journey; markable only by Ops) */
+  opsTrack?: MouOpsTrack;
 }
 
 export interface UtmRecord {

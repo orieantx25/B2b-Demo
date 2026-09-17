@@ -58,7 +58,7 @@ export default function OpsOverview() {
           tone="amber"
           href="/operations/queue?status=Awaiting%20Signature"
         />
-        <Kpi label="Signed" value={kpis.signed} tone="green" href="/operations/signed" />
+        <Kpi label="Signed / tracking" value={kpis.signed} tone="green" href="/operations/signed" />
       </KpiSection>
 
       <div className="mt-2 grid gap-3 lg:grid-cols-3">
@@ -79,7 +79,11 @@ export default function OpsOverview() {
                 <li key={m.id} className="flex items-center justify-between gap-2 px-4 py-3">
                   <div className="min-w-0">
                     <Link
-                      href={`/operations/verification?id=${m.id}`}
+                      href={
+                        ["Requested", "Verification", "Rework"].includes(m.status)
+                          ? `/operations/verification?id=${m.id}`
+                          : `/operations/signed?id=${m.id}`
+                      }
                       className="text-sm font-semibold text-[#111111] hover:text-[#e31c24]"
                     >
                       {c?.name}

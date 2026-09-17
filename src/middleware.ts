@@ -1,46 +1,28 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/jwt";
-import { canAccessPath, roleHomePath } from "@/lib/auth/roles";
 
+/**
+ * Demo build: login gate removed. Production email+password auth is specified in
+ * PRD-uGSOT-B2B-Operations-Portal.md only — re-enable session checks for production.
+ */
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Public assets & auth APIs
   if (
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/") ||
     pathname === "/favicon.ico" ||
     pathname.match(/\.(png|jpg|svg|ico|webp)$/)
   ) {
     return NextResponse.next();
   }
 
-  const token = req.cookies.get(SESSION_COOKIE)?.value;
-  const session = token ? await verifySessionToken(token) : null;
-
-  if (pathname === "/login" || pathname === "/") {
-    if (session) {
-      return NextResponse.redirect(new URL(roleHomePath(session.role), req.url));
-    }
-    if (pathname === "/") {
-      return NextResponse.redirect(new URL("/login", req.url));
-    }
-    return NextResponse.next();
-  }
-
-  if (!session) {
-    const login = new URL("/login", req.url);
-    login.searchParams.set("next", pathname);
-    return NextResponse.redirect(login);
-  }
-
-  if (!canAccessPath(session.role, pathname)) {
-    return NextResponse.redirect(new URL("/access-denied", req.url));
+  if (pathname === "/" || pathname === "/login") {
+    return NextResponse.redirect(new URL("/b2b", req.url));
   }
 
   const res = NextResponse.next();
-  res.headers.set("x-ugsot-user", session.userId);
-  res.headers.set("x-ugsot-role", session.role);
+  res.headers.set("x-ugsot-user", "USR-SUPERADMIN");
+  res.headers.set("x-ugsot-role", "super_admin");
   return res;
 }
 

@@ -19,17 +19,10 @@ function VerificationInner() {
   const startVerification = useAppStore((s) => s.startVerification);
   const requestRework = useAppStore((s) => s.requestRework);
   const approveMou = useAppStore((s) => s.approveMou);
-  const generateWo = useAppStore((s) => s.generateWo);
-  const sendWo = useAppStore((s) => s.sendWo);
-  const markSigned = useAppStore((s) => s.markSigned);
 
   const queue = useMemo(
     () =>
-      mous.filter((m) =>
-        ["Requested", "Verification", "Rework", "Approved", "WO Generated", "WO Sent", "Awaiting Signature"].includes(
-          m.status
-        )
-      ),
+      mous.filter((m) => ["Requested", "Verification", "Rework"].includes(m.status)),
     [mous]
   );
   const [selectedId, setSelectedId] = useState(focusId || queue[0]?.id || "");
@@ -59,12 +52,17 @@ function VerificationInner() {
   const [reworkOpen, setReworkOpen] = useState(false);
   const [reworkItems, setReworkItems] = useState<DocType[]>(["GST"]);
   const [reworkMsg, setReworkMsg] = useState("Please upload the latest GST certificate.");
-  const [woPreview, setWoPreview] = useState(false);
 
   if (!mou || !c) {
     return (
       <div className="animate-in pb-16">
-        <PageHeader title="Verification" subtitle="No items in queue" />
+        <PageHeader
+          title="MOU / WO verification"
+          subtitle="No items need verification. Open from the MOU / WO queue."
+        />
+        <Link href="/operations/queue" className="text-sm font-semibold text-[#e31c24]">
+          ← Back to queue
+        </Link>
       </div>
     );
   }
@@ -75,7 +73,10 @@ function VerificationInner() {
 
   return (
     <div className="animate-in pb-16">
-      <PageHeader title="Verification workspace" subtitle="Split-screen verify · OCR does not approve" />
+      <PageHeader
+        title="MOU / WO verification"
+        subtitle="Opened from the queue. Approve auto-marks MoU sent to legal — then continue in Approved tracking."
+      />
       <div className="mb-4 flex gap-2 overflow-x-auto">
         {queue.slice(0, 15).map((m) => {
           const cc = consultants.find((x) => x.id === m.consultantId);
@@ -189,7 +190,7 @@ function VerificationInner() {
 
           <div className="mt-6 flex flex-wrap gap-2">
             {mou.status === "Requested" && (
-              <Button onClick={() => startVerification(mou.id)}>Start verify</Button>
+              <Button onClick={() => startVerification(mou.id)}>Start verification</Button>
             )}
             {["Requested", "Verification", "Rework"].includes(mou.status) && (
               <>
@@ -200,31 +201,21 @@ function VerificationInner() {
                   onClick={() => {
                     if (mou.status === "Requested") startVerification(mou.id);
                     approveMou(mou.id);
+                    router.push(`/operations/signed?id=${mou.id}`);
                   }}
                 >
-                  Approve & continue
+                  Approve (auto → sent to legal)
                 </Button>
               </>
             )}
-            {mou.status === "Approved" && mou.commercialType === "Standard" && (
-              <Button onClick={() => generateWo(mou.id)}>Generate standard WO</Button>
+            {["Approved", "WO Generated", "WO Sent", "Awaiting Signature", "Signed"].includes(mou.status) && (
+              <Link href={`/operations/signed?id=${mou.id}`}>
+                <Button>Open approved tracking</Button>
+              </Link>
             )}
-            {mou.status === "Approved" && mou.commercialType === "Non-Standard" && (
-              <p className="text-xs text-[#6b6b6b]">
-                Non-standard continues via Legal/Finance email chain. Portal tracks status only.
-              </p>
-            )}
-            {mou.status === "WO Generated" && (
-              <>
-                <Button variant="outline" onClick={() => setWoPreview(true)}>
-                  Preview WO
-                </Button>
-                <Button onClick={() => sendWo(mou.id)}>Send WO</Button>
-              </>
-            )}
-            {(mou.status === "WO Sent" || mou.status === "Awaiting Signature") && (
-              <Button onClick={() => markSigned(mou.id)}>Mark signed copy received</Button>
-            )}
+            <Link href="/operations/queue">
+              <Button variant="ghost">Back to queue</Button>
+            </Link>
             <Link href={`/consultants/${c.id}`} className="px-3 py-2 text-sm underline">
               Open 360
             </Link>
@@ -256,20 +247,6 @@ function VerificationInner() {
           >
             Send rework
           </Button>
-        </div>
-      </Modal>
-
-      <Modal open={woPreview} onClose={() => setWoPreview(false)} title="Work Order preview" wide>
-        <div className="border border-[#e5e5e5] bg-[#f6f6f6] p-6">
-          <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">upGrad School of Technology</div>
-          <h3 className="mt-2 text-lg font-semibold">Work Order {mou.woNumber || "(pending number)"}</h3>
-          <div className="mt-4 space-y-1 text-sm">
-            <div>Consultant: {c.name}</div>
-            <div>Commercial slab: {mou.slab} · Management Approved</div>
-            <div>Payment terms: {mou.paymentTerms}</div>
-            <div>Status: {mou.status}</div>
-          </div>
-          <p className="mt-6 text-xs text-[#6b6b6b]">Simulated polished WO document — no real email sent.</p>
         </div>
       </Modal>
     </div>

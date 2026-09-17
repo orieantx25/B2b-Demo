@@ -60,7 +60,10 @@ function OpsQueueInner() {
 
   return (
     <div className="animate-in pb-16">
-      <PageHeader title="MOU / WO Queue" subtitle="Action-oriented — no hunting through every request." />
+      <PageHeader
+        title="MOU / WO Queue"
+        subtitle="Click a work order to open verification. Rework resubmits return here automatically."
+      />
       <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
         {chips.map((c) => (
           <button

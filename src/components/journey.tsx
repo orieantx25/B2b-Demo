@@ -9,8 +9,10 @@ const STEPS = [
   "FIRST MEETING",
   "MOU REQUESTED",
   "VERIFIED",
-  "WO GENERATED",
-  "WO SENT",
+  "SENT TO LEGAL",
+  "FINANCE APPROVED",
+  "DRAFT SHARED",
+  "SENT TO CLIENT",
   "SIGNED",
   "MATERIALS SHARED",
   "UTM CREATED",
@@ -18,16 +20,21 @@ const STEPS = [
   "ACTIVE",
 ] as const;
 
-function stepIndex(c: Consultant, mouStatus: MouStatus | "None"): number {
-  if (c.status === "Active") return 9;
-  if (c.firstLeadId || c.firstLeadDate) return 8;
-  if (c.utmStatus !== "None") return 7;
-  if (mouStatus === "Signed" && c.materialsSharedAt) return 6;
-  if (mouStatus === "Signed") return 5;
-  if (["Awaiting Signature", "WO Sent"].includes(mouStatus)) return 4;
-  if (mouStatus === "WO Generated") return 3;
-  if (["Approved", "Verification", "Legal Review", "Finance Approval"].includes(mouStatus)) return 2;
-  if (["Requested", "Rework"].includes(mouStatus)) return 1;
+function stepIndex(c: Consultant, mou: MouRequest | undefined, mouStatus: MouStatus | "None"): number {
+  if (c.status === "Active") return 11;
+  if (c.firstLeadId || c.firstLeadDate) return 10;
+  if (c.utmStatus !== "None") return 9;
+  if (mouStatus === "Signed" && c.materialsSharedAt) return 8;
+  if (mouStatus === "Signed" || mou?.signedAt) return 7;
+  if (mou?.opsTrack?.sentToClientAt || mou?.woSentAt || ["Awaiting Signature", "WO Sent"].includes(mouStatus))
+    return 6;
+  if (mou?.opsTrack?.draftSharedAt) return 5;
+  if (mou?.opsTrack?.financeApprovedAt || mouStatus === "WO Generated" || mouStatus === "Finance Approval")
+    return 4;
+  if (mou?.opsTrack?.sentToLegalAt || mou?.approvedAt || ["Approved", "Legal Review"].includes(mouStatus))
+    return 3;
+  if (["Verification", "Rework"].includes(mouStatus) || mou?.verifiedAt) return 2;
+  if (["Requested"].includes(mouStatus)) return 1;
   if (c.firstMeetingId || c.firstMeetingDate) return 0;
   return -1;
 }
@@ -44,13 +51,7 @@ function stageTimestamps(
 
   const verifiedAt =
     mou?.verifiedAt ||
-    mou?.approvedAt ||
-    (mou &&
-    ["Approved", "WO Generated", "WO Sent", "Awaiting Signature", "Signed", "Verification"].includes(
-      mou.status
-    )
-      ? mou.updatedAt
-      : undefined);
+    (mou && ["Verification", "Approved", "Rework"].includes(mou.status) ? mou.updatedAt : undefined);
 
   const activeAt =
     c.status === "Active" ? c.firstLeadDate || c.updatedAt || c.createdAt : undefined;
@@ -59,8 +60,10 @@ function stageTimestamps(
     c.firstMeetingDate || c.createdAt,
     mou?.createdAt,
     verifiedAt,
-    mou?.woGeneratedAt,
-    mou?.woSentAt,
+    mou?.opsTrack?.sentToLegalAt || mou?.approvedAt,
+    mou?.opsTrack?.financeApprovedAt,
+    mou?.opsTrack?.draftSharedAt,
+    mou?.opsTrack?.sentToClientAt || mou?.woSentAt,
     mou?.signedAt,
     c.materialsSharedAt,
     utmAt,
@@ -76,7 +79,7 @@ export function ConsultantJourney({ consultant }: { consultant: Consultant }) {
     .filter((m) => m.consultantId === consultant.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   const cUtms = utms.filter((u) => u.consultantId === consultant.id);
-  const current = stepIndex(consultant, consultant.mouStatus);
+  const current = stepIndex(consultant, mou, consultant.mouStatus);
   const times = stageTimestamps(consultant, mou, cUtms);
 
   return (
@@ -90,6 +93,12 @@ export function ConsultantJourney({ consultant }: { consultant: Consultant }) {
           const done = i <= current;
           const active = i === current;
           const at = done ? times[i] : undefined;
+          const opsOnly = [
+            "SENT TO LEGAL",
+            "FINANCE APPROVED",
+            "DRAFT SHARED",
+            "SENT TO CLIENT",
+          ].includes(step);
           return (
             <div key={step} className="flex gap-3">
               <div className="flex flex-col items-center">
@@ -119,6 +128,11 @@ export function ConsultantJourney({ consultant }: { consultant: Consultant }) {
                   )}
                 >
                   {step}
+                  {opsOnly && (
+                    <span className="ml-1.5 text-[9px] font-medium uppercase tracking-wider text-[#b0b0b0]">
+                      Ops
+                    </span>
+                  )}
                 </div>
                 {at ? (
                   <time
@@ -143,8 +157,8 @@ export function ConsultantJourney({ consultant }: { consultant: Consultant }) {
         })}
       </div>
       <p className="mt-2 text-[11px] text-[#6b6b6b]">
-        After signed agreement, drive packs auto-email to the partner. B2B can also send anytime via Send
-        Marketing Material.
+        Post-approval legal → finance → draft → client → signed steps are marked by Operations only;
+        this journey stays visible to B2B.
       </p>
     </div>
   );
@@ -171,3 +185,4 @@ export function MouLifecycle({ status }: { status: MouStatus }) {
     </div>
   );
 }
+

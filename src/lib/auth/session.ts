@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, signSession, verifySessionToken } from "@/lib/auth/jwt";
 import type { SessionPayload, AppRole } from "@/lib/auth/roles";
+import { DEMO_AUTH_DISABLED, DEMO_USER } from "@/lib/auth/demo";
 
 export { SESSION_COOKIE, signSession, verifySessionToken };
 
@@ -16,6 +17,15 @@ const cookieBase = {
 };
 
 export async function getSession(): Promise<SessionPayload | null> {
+  if (DEMO_AUTH_DISABLED) {
+    return {
+      userId: DEMO_USER.id,
+      email: DEMO_USER.email,
+      name: DEMO_USER.name,
+      role: DEMO_USER.role,
+      region: DEMO_USER.region,
+    };
+  }
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;

@@ -21,7 +21,6 @@ import type { Consultant } from "@/types";
 export default function ConsultantsPage() {
   const router = useRouter();
   const consultants = useAppStore((s) => s.consultants);
-  const members = useAppStore((s) => s.members);
   const currentUserId = useAppStore((s) => s.currentUserId);
   const persona = useAppStore((s) => s.persona);
   const createConsultant = useAppStore((s) => s.createConsultant);
@@ -56,6 +55,7 @@ export default function ConsultantsPage() {
       rows = rows.filter(
         (c) =>
           c.name.toLowerCase().includes(s) ||
+          c.organization.toLowerCase().includes(s) ||
           c.consultantCode.toLowerCase().includes(s) ||
           c.phone.includes(s) ||
           c.email.toLowerCase().includes(s)
@@ -101,7 +101,7 @@ export default function ConsultantsPage() {
     <div className="animate-in pb-16">
       <PageHeader
         title="My Consultants"
-        subtitle="Consultant is the central object. Permanent profile + journey."
+        subtitle="Open 360 for the full journey. Schedule from any row."
         actions={
           <>
             <Button variant="outline" onClick={() => setCardx(true)}>
@@ -112,11 +112,11 @@ export default function ConsultantsPage() {
         }
       />
       <div className="mb-4">
-        <Label htmlFor="consultant-search">Search consultants</Label>
+        <Label htmlFor="consultant-search">Search</Label>
         <Input
           id="consultant-search"
           aria-label="Search consultants"
-          placeholder="Search name, code, phone, email…"
+          placeholder="Name, org, code, phone…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           className="w-full max-w-md"
@@ -149,52 +149,53 @@ export default function ConsultantsPage() {
       ) : (
         <>
           <div className="space-y-2 sm:hidden">
-            {list.map((c) => {
-              const owner = members.find((m) => m.id === c.ownerId);
-              return (
-                <div key={c.id} className="card-surface p-3.5">
-                  <Link href={`/consultants/${c.id}`} className="block">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold">{c.name}</div>
-                        <div className="mt-0.5 text-xs text-[#6b6b6b]">
-                          {c.organization} · {owner?.name}
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <Badge tone={StatusTone(c.status)}>{c.status}</Badge>
-                        {c.incompleteProfile && <Badge tone="warn">Incomplete</Badge>}
-                      </div>
+            {list.map((c) => (
+              <div key={c.id} className="card-surface p-3.5">
+                <Link href={`/consultants/${c.id}`} className="block">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold">{c.name}</div>
+                      <div className="mt-0.5 text-xs text-[#6b6b6b]">{c.organization}</div>
                     </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge tone={StatusTone(c.status)}>{c.status}</Badge>
+                      {c.mouStatus && c.mouStatus !== "None" && (
+                        <Badge tone={StatusTone(c.mouStatus)}>{c.mouStatus}</Badge>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+                <div className="mt-3 flex gap-2">
+                  <Link
+                    href={`/b2b/meetings?schedule=1&consultantId=${c.id}`}
+                    className="flex-1"
+                  >
+                    <Button size="sm" variant="outline" className="min-h-11 w-full">
+                      Schedule
+                    </Button>
                   </Link>
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="mt-3 min-h-11 w-full"
+                    variant="ghost"
+                    className="min-h-11"
                     onClick={() => sendMarketingMaterial(c.id)}
                   >
-                    Send Marketing Material
+                    Materials
                   </Button>
-                  {c.materialsSharedAt && (
-                    <p className="mt-1 text-[10px] text-[#6b6b6b]">
-                      Last shared {c.materialsSharedVia === "auto_signed" ? "(auto on signed)" : "(manual)"}
-                    </p>
-                  )}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
 
           <div className="hidden overflow-x-auto card-surface sm:block">
-            <table className="w-full min-w-[920px] text-left text-sm">
+            <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="sticky top-0 bg-[#fafafa] text-[11px] font-semibold uppercase tracking-wide text-[#444]">
                 <tr>
                   <th className="px-3 py-2.5">Consultant</th>
                   <th className="px-3 py-2.5">Org</th>
-                  <th className="px-3 py-2.5">Owner</th>
                   <th className="px-3 py-2.5">Status</th>
                   <th className="px-3 py-2.5">MOU</th>
-                  <th className="px-3 py-2.5">Materials</th>
+                  <th className="px-3 py-2.5">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -211,17 +212,32 @@ export default function ConsultantsPage() {
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-[#6b6b6b]">{c.organization}</td>
-                    <td className="px-3 py-2.5 text-xs">
-                      {members.find((m) => m.id === c.ownerId)?.name}
-                    </td>
                     <td className="px-3 py-2.5">
                       <Badge tone={StatusTone(c.status)}>{c.status}</Badge>
                     </td>
-                    <td className="px-3 py-2.5 text-xs">{c.mouStatus}</td>
                     <td className="px-3 py-2.5">
-                      <Button size="sm" variant="outline" onClick={() => sendMarketingMaterial(c.id)}>
-                        Send Marketing Material
-                      </Button>
+                      {c.mouStatus && c.mouStatus !== "None" ? (
+                        <Badge tone={StatusTone(c.mouStatus)}>{c.mouStatus}</Badge>
+                      ) : (
+                        <span className="text-xs text-[#6b6b6b]">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex flex-wrap gap-1.5">
+                        <Link href={`/consultants/${c.id}`}>
+                          <Button size="sm" variant="outline">
+                            Open 360
+                          </Button>
+                        </Link>
+                        <Link href={`/b2b/meetings?schedule=1&consultantId=${c.id}`}>
+                          <Button size="sm" variant="ghost">
+                            Schedule
+                          </Button>
+                        </Link>
+                        <Button size="sm" variant="ghost" onClick={() => sendMarketingMaterial(c.id)}>
+                          Materials
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

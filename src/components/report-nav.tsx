@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/reports/consultants", label: "Consultants" },
   { href: "/reports/mou", label: "MOU" },
   { href: "/reports/weekly", label: "Weekly" },
+  { href: "/reports/consolidated", label: "Consolidated" },
 ] as const;
 
 export function ReportNav() {

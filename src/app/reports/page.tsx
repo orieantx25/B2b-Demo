@@ -15,7 +15,7 @@ import {
   YAxis,
 } from "recharts";
 import { useAppStore } from "@/store/app-store";
-import { Kpi, KpiSection, PageHeader, SourceTag } from "@/components/ui";
+import { Kpi, KpiSection, PageHeader } from "@/components/ui";
 import { ChartCard, ChartEmpty, SERIES, chartColors, chartTooltipStyle } from "@/components/report-charts";
 import { ReportNav } from "@/components/report-nav";
 
@@ -267,15 +267,16 @@ export default function ReportsOverview() {
         </ChartCard>
 
         <div className="card-surface flex flex-col justify-center gap-3 p-5">
-          <div className="text-sm font-semibold text-[#111111]">Synced systems</div>
+          <div className="text-sm font-semibold text-[#111111]">Consolidated pack</div>
           <p className="text-xs text-[#6b6b6b]">
-            Downstream volumes are mirrored from existing systems — not owned here.
+            Download all report sheets as CSV or XLSX, and email a weekly digest to selected recipients.
           </p>
-          <div className="flex flex-wrap gap-2">
-            <SourceTag>Lead System · {leads.length}</SourceTag>
-            <SourceTag>Exam System · {testTakers.length}</SourceTag>
-            <SourceTag>Admission System · {admissions.length}</SourceTag>
-          </div>
+          <a
+            href="/reports/consolidated"
+            className="inline-flex min-h-11 w-fit items-center rounded-xl bg-[#e31c24] px-4 text-sm font-semibold text-white"
+          >
+            Open consolidated report →
+          </a>
         </div>
       </div>
     </div>

@@ -10,6 +10,8 @@ export function buildLegacyUrl(
     consultantName?: string;
     counsellorCode?: string;
     parentUtmCode?: string;
+    /** Extra form fields forwarded as query params (stub handoff). */
+    fields?: Record<string, string>;
   }
 ) {
   const url = new URL(baseUrl);
@@ -19,6 +21,11 @@ export function buildLegacyUrl(
   if (params.consultantName) url.searchParams.set("consultantName", params.consultantName);
   if (params.counsellorCode) url.searchParams.set("counsellorCode", params.counsellorCode);
   if (params.parentUtmCode) url.searchParams.set("parentUtmCode", params.parentUtmCode);
+  if (params.fields) {
+    for (const [k, v] of Object.entries(params.fields)) {
+      if (v) url.searchParams.set(k, v);
+    }
+  }
   return url.toString();
 }
 

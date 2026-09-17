@@ -19,7 +19,8 @@ import {
 import { GeotagPhotoField, MeetingPhotoChip } from "@/components/geotag-photo";
 import { formatDate } from "@/lib/utils";
 import type { GeoTag } from "@/lib/geo";
-import type { EventType, MeetingType } from "@/types";
+import type { EventType, Meeting, MeetingType } from "@/types";
+import { cn } from "@/lib/utils";
 
 function MeetingsPageInner() {
   const router = useRouter();
@@ -39,32 +40,25 @@ function MeetingsPageInner() {
   const findCalendarConflict = useAppStore((s) => s.findCalendarConflict);
   const createConsultant = useAppStore((s) => s.createConsultant);
   const findDuplicates = useAppStore((s) => s.findDuplicates);
-  const requestMerge = useAppStore((s) => s.requestMerge);
   const currentUserId = useAppStore((s) => s.currentUserId);
   const members = useAppStore((s) => s.members);
   const addToast = useAppStore((s) => s.addToast);
+  const persona = useAppStore((s) => s.persona);
 
   const [tab, setTab] = useState<"meetings" | "events">("meetings");
-  const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [step, setStep] = useState<1 | 2>(1);
+  const [whoMode, setWhoMode] = useState<"new" | "previous">("new");
+  const [consultantSearch, setConsultantSearch] = useState("");
+  const [dupWarning, setDupWarning] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [eventOpen, setEventOpen] = useState(false);
-  const [dupOpen, setDupOpen] = useState(false);
-  const [dups, setDups] = useState<ReturnType<typeof findDuplicates>>([]);
-  const [pendingCreate, setPendingCreate] = useState<{
-    name: string;
-    organization: string;
-    phone: string;
-    email: string;
-    region: string;
-    meetingId?: string;
-  } | null>(null);
   const [rescheduleId, setRescheduleId] = useState<string | null>(null);
   const [photoMeetingId, setPhotoMeetingId] = useState<string | null>(null);
   const [photoDraft, setPhotoDraft] = useState<{ photoUrl: string; geo: GeoTag } | null>(null);
-  const [completePromptId, setCompletePromptId] = useState<string | null>(null);
-  const [photoPickerOpen, setPhotoPickerOpen] = useState(false);
-  const [photoEmptyOpen, setPhotoEmptyOpen] = useState(false);
   const [todayOnly, setTodayOnly] = useState(false);
+  const [manageEventId, setManageEventId] = useState<string | null>(null);
+  const [invitePick, setInvitePick] = useState<string[]>([]);
 
   const [form, setForm] = useState({
     consultantName: "",
@@ -77,9 +71,6 @@ function MeetingsPageInner() {
     location: "",
     notes: "",
     organization: "",
-    createConsultant: true,
-    photoUrl: "" as string | undefined,
-    geo: undefined as GeoTag | undefined,
   });
 
   const [eventForm, setEventForm] = useState({
@@ -93,8 +84,26 @@ function MeetingsPageInner() {
     inviteMemberIds: [] as string[],
     scheduleFileName: "",
   });
-  const [manageEventId, setManageEventId] = useState<string | null>(null);
-  const [invitePick, setInvitePick] = useState<string[]>([]);
+
+  const myConsultants = useMemo(() => {
+    const rows =
+      persona === "b2b" ? consultants.filter((c) => c.ownerId === currentUserId) : consultants;
+    return [...rows].sort((a, b) => a.name.localeCompare(b.name));
+  }, [consultants, persona, currentUserId]);
+
+  const filteredConsultants = useMemo(() => {
+    const q = consultantSearch.trim().toLowerCase();
+    if (!q) return myConsultants.slice(0, 50);
+    return myConsultants
+      .filter(
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          c.organization.toLowerCase().includes(q) ||
+          c.email.toLowerCase().includes(q) ||
+          c.consultantCode.toLowerCase().includes(q)
+      )
+      .slice(0, 50);
+  }, [myConsultants, consultantSearch]);
 
   const slotConflict = useMemo(
     () => findCalendarConflict(form.date, form.time),
@@ -104,6 +113,7 @@ function MeetingsPageInner() {
   useEffect(() => {
     const schedule = search.get("schedule");
     const photo = search.get("photo");
+    const openId = search.get("open");
     const consultantIdParam = search.get("consultantId");
     const todayParam = search.get("today");
 
@@ -113,12 +123,19 @@ function MeetingsPageInner() {
       router.replace("/b2b/meetings", { scroll: false });
     }
 
+    if (openId) {
+      setDetailId(openId);
+      setTab("meetings");
+      router.replace("/b2b/meetings", { scroll: false });
+    }
+
     if (schedule === "1") {
-      setOpen(true);
+      setScheduleOpen(true);
       setStep(1);
       if (consultantIdParam) {
         const c = consultants.find((x) => x.id === consultantIdParam);
         if (c) {
+          setWhoMode("previous");
           setForm((f) => ({
             ...f,
             consultantId: c.id,
@@ -126,43 +143,30 @@ function MeetingsPageInner() {
             phone: c.phone,
             email: c.email,
             organization: c.organization,
-            createConsultant: false,
           }));
+          setConsultantSearch(c.name);
         }
+      } else {
+        setWhoMode("new");
       }
       router.replace("/b2b/meetings", { scroll: false });
     }
 
-    if (photo === "1") {
-      const candidates = meetings.filter((m) => m.status !== "Cancelled");
-      const needingPhoto = candidates.filter((m) => !m.photoUrl);
-      if (candidates.length === 0) {
-        setPhotoEmptyOpen(true);
-      } else if (needingPhoto.length === 1) {
-        const target = needingPhoto[0]!;
-        setPhotoMeetingId(target.id);
-        setPhotoDraft(null);
-      } else if (needingPhoto.length > 1 || candidates.length > 1) {
-        setPhotoPickerOpen(true);
-      } else {
-        const target = candidates[0]!;
+    if (photo && photo !== "1") {
+      const target = meetings.find((m) => m.id === photo);
+      if (target) {
+        setDetailId(target.id);
         setPhotoMeetingId(target.id);
         setPhotoDraft(
-          target.photoUrl && target.geo
-            ? { photoUrl: target.photoUrl, geo: target.geo }
-            : null
+          target.photoUrl && target.geo ? { photoUrl: target.photoUrl, geo: target.geo } : null
         );
       }
       router.replace("/b2b/meetings", { scroll: false });
-    } else if (photo && photo !== "1") {
-      const target = meetings.find((m) => m.id === photo);
-      if (target) {
-        setPhotoMeetingId(target.id);
-        setPhotoDraft(
-          target.photoUrl && target.geo
-            ? { photoUrl: target.photoUrl, geo: target.geo }
-            : null
-        );
+    } else if (photo === "1") {
+      const needing = meetings.find((m) => !m.photoUrl && m.status !== "Cancelled");
+      if (needing) {
+        setDetailId(needing.id);
+        setPhotoMeetingId(needing.id);
       }
       router.replace("/b2b/meetings", { scroll: false });
     }
@@ -170,34 +174,61 @@ function MeetingsPageInner() {
 
   const today = new Date().toISOString().slice(0, 10);
   const sorted = useMemo(() => {
-    let rows = [...meetings].sort((a, b) => b.date.localeCompare(a.date));
+    let rows = [...meetings].sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
+    if (persona === "b2b") rows = rows.filter((m) => m.ownerId === currentUserId);
     if (todayOnly) rows = rows.filter((m) => m.date === today);
-    return rows.slice(0, 80);
-  }, [meetings, todayOnly, today]);
+    return rows.slice(0, 100);
+  }, [meetings, todayOnly, today, persona, currentUserId]);
 
-  const photoCandidates = useMemo(
-    () =>
-      meetings
-        .filter((m) => m.status !== "Cancelled")
-        .sort((a, b) => {
-          const aNeed = a.photoUrl ? 1 : 0;
-          const bNeed = b.photoUrl ? 1 : 0;
-          if (aNeed !== bNeed) return aNeed - bNeed;
-          return b.date.localeCompare(a.date);
-        }),
-    [meetings]
-  );
+  const myEvents = useMemo(() => {
+    let rows = [...events];
+    if (persona === "b2b") rows = rows.filter((e) => e.ownerId === currentUserId);
+    return rows.slice(0, 48);
+  }, [events, persona, currentUserId]);
 
-  const resetForm = () => {
-    setStep(1);
-    setForm((f) => ({ ...f, photoUrl: undefined, geo: undefined }));
+  const detailMeeting = detailId ? meetings.find((m) => m.id === detailId) : null;
+
+  const checkDuplicates = () => {
+    if (whoMode !== "new" || form.consultantId) {
+      setDupWarning(null);
+      return;
+    }
+    if (!form.consultantName.trim() && !form.email.trim()) {
+      setDupWarning(null);
+      return;
+    }
+    const found = findDuplicates(form.consultantName, form.phone, form.email);
+    if (found.length) {
+      const c = found[0]!;
+      setDupWarning(`Consultant already exists: ${c.name}. Using existing record.`);
+      setForm((f) => ({
+        ...f,
+        consultantId: c.id,
+        consultantName: c.name,
+        phone: c.phone,
+        email: c.email,
+        organization: c.organization,
+      }));
+      addToast({
+        title: "Consultant already exists",
+        description: `Linked to ${c.name}`,
+        variant: "error",
+      });
+    } else {
+      setDupWarning(null);
+    }
   };
 
   const submitMeeting = () => {
-    if (form.createConsultant && !form.consultantId && form.phone.trim().length < 8) {
+    if (!form.consultantName.trim()) {
+      addToast({ title: "Name required", variant: "error" });
+      setStep(1);
+      return;
+    }
+    if (whoMode === "new" && !form.consultantId && form.phone.trim().length < 8) {
       addToast({
         title: "Phone required",
-        description: "Enter a phone number to create a consultant profile.",
+        description: "Enter a phone for a new consultant.",
         variant: "error",
       });
       setStep(1);
@@ -207,9 +238,29 @@ function MeetingsPageInner() {
       setStep(2);
       return;
     }
+
+    // Final duplicate check for new
+    let resolvedConsultantId = form.consultantId || undefined;
+    if (whoMode === "new" && !resolvedConsultantId) {
+      const found = findDuplicates(form.consultantName, form.phone, form.email);
+      if (found.length) {
+        const c = found[0]!;
+        resolvedConsultantId = c.id;
+        setForm((f) => ({
+          ...f,
+          consultantId: c.id,
+          consultantName: c.name,
+          phone: c.phone,
+          email: c.email,
+          organization: c.organization,
+        }));
+        setDupWarning(`Consultant already exists: ${c.name}. Scheduling against existing.`);
+      }
+    }
+
     const mid = scheduleMeeting({
       consultantName: form.consultantName,
-      consultantId: form.consultantId || undefined,
+      consultantId: resolvedConsultantId,
       date: form.date,
       time: form.time,
       type: form.type,
@@ -218,61 +269,62 @@ function MeetingsPageInner() {
       location: form.location,
       notes: form.notes,
       organization: form.organization || form.consultantName,
-      photoUrl: form.photoUrl,
-      geo: form.geo,
     });
     if (!mid) {
       setStep(2);
       return;
     }
-    if (form.createConsultant && !form.consultantId) {
-      const found = findDuplicates(form.consultantName, form.phone, form.email);
-      if (found.length) {
-        setDups(found);
-        setPendingCreate({
-          name: form.consultantName,
-          organization: form.organization || form.consultantName,
-          phone: form.phone,
-          email: form.email,
-          region: members.find((m) => m.id === currentUserId)?.region || "NCR",
-          meetingId: mid,
-        });
-        setDupOpen(true);
-      } else {
-        createConsultant({
-          name: form.consultantName,
-          organization: form.organization || form.consultantName,
-          phone: form.phone,
-          email: form.email,
-          region: members.find((m) => m.id === currentUserId)?.region || "NCR",
-          meetingId: mid,
-        });
-      }
+
+    if (whoMode === "new" && !resolvedConsultantId) {
+      createConsultant({
+        name: form.consultantName,
+        organization: form.organization || form.consultantName,
+        phone: form.phone,
+        email: form.email,
+        region: members.find((m) => m.id === currentUserId)?.region || "NCR",
+        meetingId: mid,
+      });
+    } else if (resolvedConsultantId) {
+      linkMeetingToConsultant(mid, resolvedConsultantId);
     }
-    setOpen(false);
-    resetForm();
+
+    setScheduleOpen(false);
+    setStep(1);
+    setDupWarning(null);
+    setForm({
+      consultantName: "",
+      consultantId: "",
+      date: new Date().toISOString().slice(0, 10),
+      time: "10:00",
+      type: "In Person",
+      phone: "",
+      email: "",
+      location: "",
+      notes: "",
+      organization: "",
+    });
   };
 
-  const tryComplete = (id: string) => {
-    const m = meetings.find((x) => x.id === id);
-    if (m && !m.photoUrl) {
-      setCompletePromptId(id);
+  const tryComplete = (m: Meeting) => {
+    if (!m.photoUrl) {
+      setPhotoMeetingId(m.id);
       setPhotoDraft(null);
       return;
     }
-    completeMeeting(id);
+    completeMeeting(m.id);
   };
 
   const canStep1 =
-    !!form.consultantName.trim() &&
-    (!form.createConsultant || !!form.consultantId || form.phone.trim().length >= 8);
+    whoMode === "previous"
+      ? !!form.consultantId && !!form.consultantName
+      : !!form.consultantName.trim() && (form.consultantId ? true : form.phone.trim().length >= 8);
   const canStep2 = !!form.date && !!form.time && !slotConflict;
 
   return (
     <div className="animate-in pb-16">
       <PageHeader
         title="Meetings & Events"
-        subtitle="Portal is source of truth. Capture field photos in the field."
+        subtitle="Select a row for details. Schedule without evidence — add photos later."
         actions={
           <>
             <Button variant="outline" onClick={() => setEventOpen(true)}>
@@ -280,7 +332,8 @@ function MeetingsPageInner() {
             </Button>
             <Button
               onClick={() => {
-                setOpen(true);
+                setWhoMode("new");
+                setScheduleOpen(true);
                 setStep(1);
               }}
             >
@@ -296,24 +349,24 @@ function MeetingsPageInner() {
             key={t}
             type="button"
             onClick={() => setTab(t)}
-            className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-semibold capitalize transition ${
+            className={cn(
+              "min-h-10 shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-semibold capitalize",
               tab === t
                 ? "border-[#e31c24] bg-[#e31c24] text-white"
                 : "border-[#e5e5e5] bg-white text-[#6b6b6b]"
-            }`}
+            )}
           >
-            {t} ({t === "meetings" ? meetings.length : events.length})
+            {t} ({t === "meetings" ? sorted.length : myEvents.length})
           </button>
         ))}
         {tab === "meetings" && (
           <button
             type="button"
             onClick={() => setTodayOnly((v) => !v)}
-            className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
-              todayOnly
-                ? "border-[#111111] bg-[#111111] text-white"
-                : "border-[#e5e5e5] bg-white text-[#6b6b6b]"
-            }`}
+            className={cn(
+              "min-h-10 shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-semibold",
+              todayOnly ? "border-[#111] bg-[#111] text-white" : "border-[#e5e5e5] bg-white text-[#6b6b6b]"
+            )}
           >
             Today
           </button>
@@ -323,12 +376,12 @@ function MeetingsPageInner() {
       {tab === "meetings" ? (
         sorted.length === 0 ? (
           <EmptyState
-            title="No meetings yet"
-            description="Schedule a field meeting or scan a visiting card first."
+            title="No meetings"
+            description="Schedule a field meeting to get started."
             action={
               <Button
                 onClick={() => {
-                  setOpen(true);
+                  setScheduleOpen(true);
                   setStep(1);
                 }}
               >
@@ -339,116 +392,49 @@ function MeetingsPageInner() {
         ) : (
           <>
             <div className="space-y-2 sm:hidden">
-              {sorted.slice(0, 40).map((m) => (
-                <div key={m.id} className="card-surface p-3.5">
+              {sorted.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setDetailId(m.id)}
+                  className="card-surface w-full p-3.5 text-left"
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold">
-                        {m.consultantId ? (
-                          <Link href={`/consultants/${m.consultantId}`}>{m.consultantName}</Link>
-                        ) : (
-                          m.consultantName
-                        )}
-                      </div>
+                      <div className="truncate text-sm font-semibold">{m.consultantName}</div>
                       <div className="mt-0.5 text-xs text-[#6b6b6b]">
                         {formatDate(m.date)} · {m.time} · {m.type}
                       </div>
                     </div>
                     <Badge tone={StatusTone(m.status)}>{m.status}</Badge>
                   </div>
-                  <MeetingPhotoChip photoUrl={m.photoUrl} geo={m.geo} />
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {m.status !== "Completed" && (
-                      <Button size="sm" variant="outline" className="flex-1" onClick={() => tryComplete(m.id)}>
-                        Complete
-                      </Button>
-                    )}
-                    <Button size="sm" variant="ghost" className="flex-1" onClick={() => setRescheduleId(m.id)}>
-                      Reschedule
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => {
-                        setPhotoMeetingId(m.id);
-                        setPhotoDraft(
-                          m.photoUrl && m.geo ? { photoUrl: m.photoUrl, geo: m.geo } : null
-                        );
-                      }}
-                    >
-                      {m.photoUrl ? "Update field photo" : "Add field photo"}
-                    </Button>
-                  </div>
-                </div>
+                </button>
               ))}
             </div>
             <div className="hidden overflow-x-auto card-surface sm:block">
-              <table className="w-full min-w-[900px] text-left text-sm">
-                <thead className="bg-[#fafafa] text-[11px] font-semibold uppercase tracking-wide text-[#444]">
+              <table className="w-full min-w-[640px] text-left text-sm">
+                <thead className="sticky top-0 bg-[#fafafa] text-[11px] font-semibold uppercase tracking-wide text-[#444]">
                   <tr>
                     <th className="px-3 py-2.5">Consultant</th>
-                    <th className="px-3 py-2.5">Date</th>
-                    <th className="px-3 py-2.5">Time</th>
+                    <th className="px-3 py-2.5">When</th>
                     <th className="px-3 py-2.5">Type</th>
-                    <th className="px-3 py-2.5">Photo</th>
                     <th className="px-3 py-2.5">Status</th>
-                    <th className="px-3 py-2.5">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sorted.map((m) => (
-                    <tr key={m.id} className="border-t border-[#e5e5e5] hover:bg-[#fafafa]">
-                      <td className="px-3 py-2.5 font-medium">
-                        {m.consultantId ? (
-                          <Link href={`/consultants/${m.consultantId}`} className="hover:text-[#e31c24]">
-                            {m.consultantName}
-                          </Link>
-                        ) : (
-                          m.consultantName
-                        )}
+                    <tr
+                      key={m.id}
+                      className="cursor-pointer border-t border-[#e5e5e5] hover:bg-[#fafafa]"
+                      onClick={() => setDetailId(m.id)}
+                    >
+                      <td className="px-3 py-2.5 font-medium">{m.consultantName}</td>
+                      <td className="px-3 py-2.5 text-xs text-[#6b6b6b]">
+                        {formatDate(m.date)} · {m.time}
                       </td>
-                      <td className="px-3 py-2.5">{formatDate(m.date)}</td>
-                      <td className="px-3 py-2.5">{m.time}</td>
-                      <td className="px-3 py-2.5">{m.type}</td>
-                      <td className="px-3 py-2.5">
-                        {m.photoUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={m.photoUrl}
-                            alt=""
-                            className="h-8 w-12 rounded object-cover border border-[#e5e5e5]"
-                          />
-                        ) : (
-                          <span className="text-xs text-[#6b6b6b]">—</span>
-                        )}
-                      </td>
+                      <td className="px-3 py-2.5 text-xs">{m.type}</td>
                       <td className="px-3 py-2.5">
                         <Badge tone={StatusTone(m.status)}>{m.status}</Badge>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex flex-wrap gap-1">
-                          {m.status !== "Completed" && (
-                            <Button size="sm" variant="outline" onClick={() => tryComplete(m.id)}>
-                              Complete
-                            </Button>
-                          )}
-                          <Button size="sm" variant="ghost" onClick={() => setRescheduleId(m.id)}>
-                            Reschedule
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setPhotoMeetingId(m.id);
-                              setPhotoDraft(
-                                m.photoUrl && m.geo ? { photoUrl: m.photoUrl, geo: m.geo } : null
-                              );
-                            }}
-                          >
-                            {m.photoUrl ? "Update photo" : "Add field photo"}
-                          </Button>
-                        </div>
                       </td>
                     </tr>
                   ))}
@@ -457,61 +443,153 @@ function MeetingsPageInner() {
             </div>
           </>
         )
-      ) : events.length === 0 ? (
+      ) : myEvents.length === 0 ? (
         <EmptyState
-          title="No events yet"
-          description="Create an event for field campaigns or partner days."
+          title="No events"
+          description="Create a career fair or partner day."
           action={<Button onClick={() => setEventOpen(true)}>Create event</Button>}
         />
       ) : (
-        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-          {events.slice(0, 48).map((e) => (
-            <div key={e.id} className="card-surface flex flex-col p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="text-sm font-semibold">{e.name}</div>
-                <Badge tone="info">{e.type || "Event"}</Badge>
-              </div>
-              <div className="mt-1 text-xs text-[#6b6b6b]">
-                {formatDate(e.date)} · {e.startTime || "—"}–{e.endTime || "—"} · {e.location}
-              </div>
-              <div className="mt-1 text-[11px] font-medium text-[#e31c24]">
-                Blocks meetings in this window
-              </div>
-              {e.scheduleFileName && (
-                <div className="mt-2 text-[11px] text-[#6b6b6b]">Schedule: {e.scheduleFileName}</div>
-              )}
-              {e.invites?.length > 0 && (
-                <div className="mt-1 text-[11px] text-[#6b6b6b]">
-                  Invites: {e.invites.map((i) => i.name).join(", ")}
-                </div>
-              )}
-              {e.eventData?.length > 0 && (
-                <div className="mt-1 text-[11px] text-[#6b6b6b]">
-                  Data files: {e.eventData.length}
-                </div>
-              )}
-              {e.notes && <p className="mt-2 text-xs text-[#6b6b6b]">{e.notes}</p>}
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-3 w-full"
-                onClick={() => {
-                  setManageEventId(e.id);
-                  setInvitePick([]);
-                }}
-              >
-                Manage · invite · upload
-              </Button>
-            </div>
-          ))}
+        <div className="overflow-x-auto card-surface">
+          <table className="w-full min-w-[560px] text-left text-sm">
+            <thead className="bg-[#fafafa] text-[11px] font-semibold uppercase tracking-wide text-[#444]">
+              <tr>
+                <th className="px-3 py-2.5">Event</th>
+                <th className="px-3 py-2.5">When</th>
+                <th className="px-3 py-2.5">Location</th>
+                <th className="px-3 py-2.5">Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              {myEvents.map((e) => (
+                <tr
+                  key={e.id}
+                  className="cursor-pointer border-t border-[#e5e5e5] hover:bg-[#fafafa]"
+                  onClick={() => setManageEventId(e.id)}
+                >
+                  <td className="px-3 py-2.5 font-medium">{e.name}</td>
+                  <td className="px-3 py-2.5 text-xs">
+                    {formatDate(e.date)} · {e.startTime}–{e.endTime}
+                  </td>
+                  <td className="px-3 py-2.5 text-xs text-[#6b6b6b]">{e.location}</td>
+                  <td className="px-3 py-2.5">
+                    <Badge tone="info">{e.type}</Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
+      {/* Meeting detail PIP */}
       <Modal
-        open={open}
+        open={!!detailMeeting}
         onClose={() => {
-          setOpen(false);
-          resetForm();
+          setDetailId(null);
+          setPhotoMeetingId(null);
+        }}
+        title={detailMeeting?.consultantName || "Meeting"}
+        wide
+      >
+        {detailMeeting && (
+          <div className="space-y-4">
+            <dl className="grid gap-2 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-xs text-[#6b6b6b]">When</dt>
+                <dd className="font-medium">
+                  {formatDate(detailMeeting.date)} · {detailMeeting.time}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-[#6b6b6b]">Type</dt>
+                <dd className="font-medium">{detailMeeting.type}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-[#6b6b6b]">Status</dt>
+                <dd>
+                  <Badge tone={StatusTone(detailMeeting.status)}>{detailMeeting.status}</Badge>
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-[#6b6b6b]">Location</dt>
+                <dd className="font-medium">{detailMeeting.location || "—"}</dd>
+              </div>
+            </dl>
+            {detailMeeting.notes && (
+              <p className="text-sm text-[#6b6b6b]">{detailMeeting.notes}</p>
+            )}
+            <MeetingPhotoChip photoUrl={detailMeeting.photoUrl} geo={detailMeeting.geo} />
+            {photoMeetingId === detailMeeting.id && (
+              <GeotagPhotoField
+                photoUrl={photoDraft?.photoUrl}
+                geo={photoDraft?.geo}
+                onChange={setPhotoDraft}
+              />
+            )}
+            <div className="flex flex-wrap gap-2">
+              {detailMeeting.status !== "Completed" && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (photoDraft && photoMeetingId === detailMeeting.id) {
+                      attachMeetingPhoto(detailMeeting.id, photoDraft);
+                      completeMeeting(detailMeeting.id);
+                      setPhotoMeetingId(null);
+                      setPhotoDraft(null);
+                    } else {
+                      tryComplete(detailMeeting);
+                    }
+                  }}
+                >
+                  {photoDraft && photoMeetingId === detailMeeting.id
+                    ? "Save photo & complete"
+                    : "Complete"}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setRescheduleId(detailMeeting.id);
+                  setDetailId(null);
+                }}
+              >
+                Reschedule
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setPhotoMeetingId(detailMeeting.id);
+                  setPhotoDraft(
+                    detailMeeting.photoUrl && detailMeeting.geo
+                      ? { photoUrl: detailMeeting.photoUrl, geo: detailMeeting.geo }
+                      : null
+                  );
+                }}
+              >
+                {detailMeeting.photoUrl ? "Update photo" : "Add photo"}
+              </Button>
+              {detailMeeting.consultantId && (
+                <Link href={`/consultants/${detailMeeting.consultantId}`}>
+                  <Button size="sm" variant="ghost">
+                    Open 360
+                  </Button>
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Schedule — 2 steps, no evidence */}
+      <Modal
+        open={scheduleOpen}
+        onClose={() => {
+          setScheduleOpen(false);
+          setStep(1);
+          setDupWarning(null);
         }}
         title="Schedule meeting"
         wide
@@ -520,19 +598,17 @@ function MeetingsPageInner() {
           {[
             { n: 1 as const, label: "Who" },
             { n: 2 as const, label: "When / Where" },
-            { n: 3 as const, label: "Evidence" },
           ].map((s) => (
             <button
               key={s.n}
               type="button"
               onClick={() => {
-                if (s.n === 1 || (s.n === 2 && canStep1) || (s.n === 3 && canStep1 && canStep2)) {
-                  setStep(s.n);
-                }
+                if (s.n === 1 || (s.n === 2 && canStep1)) setStep(s.n);
               }}
-              className={`rounded-full px-3 py-1 ${
+              className={cn(
+                "rounded-full px-3 py-1.5",
                 step === s.n ? "bg-[#e31c24] text-white" : "bg-[#f0f0f0] text-[#6b6b6b]"
-              }`}
+              )}
             >
               {s.n}. {s.label}
             </button>
@@ -540,68 +616,141 @@ function MeetingsPageInner() {
         </div>
 
         {step === 1 && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <Label>Consultant</Label>
-              <Select
-                value={form.consultantId}
-                onChange={(e) => {
-                  const c = consultants.find((x) => x.id === e.target.value);
-                  setForm({
-                    ...form,
-                    consultantId: e.target.value,
-                    consultantName: c?.name || form.consultantName,
-                    phone: c?.phone || form.phone,
-                    email: c?.email || form.email,
-                    organization: c?.organization || form.organization,
-                    createConsultant: !e.target.value,
-                  });
-                }}
-              >
-                <option value="">New consultant</option>
-                {consultants.slice(0, 80).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              {(
+                [
+                  { id: "new" as const, label: "New meeting" },
+                  { id: "previous" as const, label: "Previous consultant" },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    setWhoMode(opt.id);
+                    setDupWarning(null);
+                    if (opt.id === "new") {
+                      setForm((f) => ({
+                        ...f,
+                        consultantId: "",
+                        consultantName: "",
+                        phone: "",
+                        email: "",
+                        organization: "",
+                      }));
+                      setConsultantSearch("");
+                    }
+                  }}
+                  className={cn(
+                    "min-h-11 flex-1 rounded-xl border px-3 py-2 text-sm font-semibold",
+                    whoMode === opt.id
+                      ? "border-[#e31c24] bg-[#fdecec] text-[#e31c24]"
+                      : "border-[#e5e5e5] bg-white text-[#6b6b6b]"
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
-            {!form.consultantId && (
-              <>
+
+            {whoMode === "previous" ? (
+              <div>
+                <Label htmlFor="prev-search">Search your consultants</Label>
+                <Input
+                  id="prev-search"
+                  value={consultantSearch}
+                  onChange={(e) => {
+                    setConsultantSearch(e.target.value);
+                    setForm((f) => ({ ...f, consultantId: "", consultantName: e.target.value }));
+                  }}
+                  placeholder="Name, org, code, email…"
+                  autoComplete="off"
+                />
+                <div className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-[#e5e5e5]">
+                  {filteredConsultants.length === 0 ? (
+                    <p className="px-3 py-4 text-sm text-[#6b6b6b]">No matches</p>
+                  ) : (
+                    filteredConsultants.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setForm((f) => ({
+                            ...f,
+                            consultantId: c.id,
+                            consultantName: c.name,
+                            phone: c.phone,
+                            email: c.email,
+                            organization: c.organization,
+                          }));
+                          setConsultantSearch(c.name);
+                          setDupWarning(null);
+                        }}
+                        className={cn(
+                          "flex w-full flex-col border-b border-[#e5e5e5] px-3 py-2.5 text-left text-sm last:border-0 hover:bg-[#fafafa]",
+                          form.consultantId === c.id && "bg-[#fdecec]"
+                        )}
+                      >
+                        <span className="font-semibold">{c.name}</span>
+                        <span className="text-xs text-[#6b6b6b]">
+                          {c.organization} · {c.consultantCode}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+                {form.consultantId && (
+                  <p className="mt-2 text-xs text-[#1b7a4e]">
+                    Selected: <strong>{form.consultantName}</strong> (name only for this meeting)
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div className="sm:col-span-2">
-                  <Label>Full name *</Label>
+                  <Label htmlFor="new-name">Name *</Label>
                   <Input
+                    id="new-name"
                     value={form.consultantName}
-                    onChange={(e) => setForm({ ...form, consultantName: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, consultantName: e.target.value, consultantId: "" })
+                    }
+                    onBlur={checkDuplicates}
                   />
                 </div>
                 <div>
-                  <Label>Phone *</Label>
+                  <Label htmlFor="new-phone">Phone *</Label>
                   <Input
+                    id="new-phone"
                     value={form.phone}
-                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    placeholder="10-digit mobile"
+                    onChange={(e) => setForm({ ...form, phone: e.target.value, consultantId: "" })}
+                    onBlur={checkDuplicates}
                   />
                 </div>
                 <div>
-                  <Label>Email</Label>
+                  <Label htmlFor="new-email">Email</Label>
                   <Input
+                    id="new-email"
+                    type="email"
                     value={form.email}
-                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    onChange={(e) => setForm({ ...form, email: e.target.value, consultantId: "" })}
+                    onBlur={checkDuplicates}
                   />
                 </div>
                 <div className="sm:col-span-2">
-                  <Label>Organization</Label>
+                  <Label htmlFor="new-org">Organization</Label>
                   <Input
+                    id="new-org"
                     value={form.organization}
                     onChange={(e) => setForm({ ...form, organization: e.target.value })}
                   />
                 </div>
-              </>
-            )}
-            {form.consultantId && (
-              <div className="sm:col-span-2 text-sm text-[#6b6b6b]">
-                Linked to <strong className="text-[#111111]">{form.consultantName}</strong>
+                {dupWarning && (
+                  <div className="sm:col-span-2 rounded-xl border border-[#f0d2ad] bg-[#fff4e8] px-3 py-2 text-sm text-[#b45309]">
+                    {dupWarning}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -644,32 +793,17 @@ function MeetingsPageInner() {
             </div>
             {slotConflict && (
               <div className="sm:col-span-2 rounded-xl border border-[#f5c2c4] bg-[#fdecec] px-3 py-2 text-sm text-[#e31c24]">
-                This slot overlaps <strong>{slotConflict.name}</strong> (
-                {slotConflict.startTime}–{slotConflict.endTime}). Choose another time — meetings cannot
-                be booked during a scheduled event.
+                Overlaps event <strong>{slotConflict.name}</strong> ({slotConflict.startTime}–
+                {slotConflict.endTime}). Pick another slot.
               </div>
             )}
             <div className="sm:col-span-2">
               <Label>Notes</Label>
-              <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+              <Textarea
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              />
             </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div>
-            <p className="mb-3 text-xs text-[#6b6b6b]">Optional — attach evidence now or later from the list.</p>
-            <GeotagPhotoField
-              photoUrl={form.photoUrl}
-              geo={form.geo}
-              onChange={(next) => {
-                if (!next) {
-                  setForm({ ...form, photoUrl: undefined, geo: undefined });
-                  return;
-                }
-                setForm({ ...form, photoUrl: next.photoUrl, geo: next.geo });
-              }}
-            />
           </div>
         )}
 
@@ -678,177 +812,31 @@ function MeetingsPageInner() {
             variant="outline"
             onClick={() => {
               if (step === 1) {
-                setOpen(false);
-                resetForm();
-              } else setStep((s) => (s - 1) as 1 | 2 | 3);
+                setScheduleOpen(false);
+              } else setStep(1);
             }}
           >
             {step === 1 ? "Cancel" : "Back"}
           </Button>
-          {step < 3 ? (
-            <Button
-              disabled={step === 1 ? !canStep1 : !canStep2}
-              onClick={() => setStep((s) => (s + 1) as 1 | 2 | 3)}
-            >
+          {step === 1 ? (
+            <Button disabled={!canStep1} onClick={() => setStep(2)}>
               Continue
             </Button>
           ) : (
-            <Button disabled={!canStep1 || !canStep2} onClick={submitMeeting}>
+            <Button disabled={!canStep2} onClick={submitMeeting}>
               Schedule
             </Button>
           )}
         </div>
       </Modal>
 
-      <Modal
-        open={photoEmptyOpen}
-        onClose={() => setPhotoEmptyOpen(false)}
-        title="Add field photo"
-      >
-        <EmptyState
-          title="No meetings yet"
-          description="Schedule a meeting first, then attach a geotagged field photo."
-          action={
-            <Button
-              onClick={() => {
-                setPhotoEmptyOpen(false);
-                setOpen(true);
-                setStep(1);
-              }}
-            >
-              Schedule meeting
-            </Button>
-          }
-        />
-      </Modal>
-
-      <Modal
-        open={photoPickerOpen}
-        onClose={() => setPhotoPickerOpen(false)}
-        title="Choose meeting"
-      >
-        <p className="mb-3 text-xs text-[#6b6b6b]">Select which meeting to attach a field photo to.</p>
-        <ul className="max-h-72 space-y-2 overflow-y-auto">
-          {photoCandidates.map((m) => (
-            <li key={m.id}>
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-2 rounded-[12px] border border-[#e5e5e5] px-3 py-2.5 text-left hover:border-[#e31c24]/40 hover:bg-[#fafafa]"
-                onClick={() => {
-                  setPhotoMeetingId(m.id);
-                  setPhotoDraft(
-                    m.photoUrl && m.geo ? { photoUrl: m.photoUrl, geo: m.geo } : null
-                  );
-                  setPhotoPickerOpen(false);
-                }}
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold">{m.consultantName}</div>
-                  <div className="text-xs text-[#6b6b6b]">
-                    {formatDate(m.date)} · {m.time} · {m.type}
-                  </div>
-                </div>
-                <Badge tone={m.photoUrl ? "success" : "warn"}>
-                  {m.photoUrl ? "Has photo" : "Needs photo"}
-                </Badge>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </Modal>
-
-      <Modal
-        open={!!photoMeetingId}
-        onClose={() => {
-          setPhotoMeetingId(null);
-          setPhotoDraft(null);
-        }}
-        title="Add field photo"
-      >
-        <p className="mb-3 text-xs text-[#6b6b6b]">
-          Attach a geotagged field photo for this meeting.
-        </p>
-        <GeotagPhotoField
-          photoUrl={photoDraft?.photoUrl}
-          geo={photoDraft?.geo}
-          onChange={setPhotoDraft}
-        />
-        <div className="mt-4 flex justify-end gap-2">
-          <Button
-            variant="outline"
-            onClick={() => {
-              setPhotoMeetingId(null);
-              setPhotoDraft(null);
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            disabled={!photoDraft || !photoMeetingId}
-            onClick={() => {
-              if (photoMeetingId && photoDraft) {
-                attachMeetingPhoto(photoMeetingId, photoDraft);
-              }
-              setPhotoMeetingId(null);
-              setPhotoDraft(null);
-            }}
-          >
-            Save photo
-          </Button>
-        </div>
-      </Modal>
-
-      <Modal
-        open={!!completePromptId}
-        onClose={() => setCompletePromptId(null)}
-        title="Complete meeting"
-      >
-        <p className="mb-3 text-sm text-[#6b6b6b]">
-          Optional: add a field photo before marking complete.
-        </p>
-        <GeotagPhotoField
-          photoUrl={photoDraft?.photoUrl}
-          geo={photoDraft?.geo}
-          onChange={setPhotoDraft}
-        />
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <Button
-            variant="outline"
-            onClick={() => {
-              if (completePromptId) completeMeeting(completePromptId);
-              setCompletePromptId(null);
-              setPhotoDraft(null);
-            }}
-          >
-            Skip & complete
-          </Button>
-          <Button
-            onClick={() => {
-              if (completePromptId) {
-                if (photoDraft) attachMeetingPhoto(completePromptId, photoDraft);
-                completeMeeting(completePromptId);
-              }
-              setCompletePromptId(null);
-              setPhotoDraft(null);
-            }}
-          >
-            {photoDraft ? "Save photo & complete" : "Complete"}
-          </Button>
-        </div>
-      </Modal>
-
-      <Modal open={eventOpen} onClose={() => setEventOpen(false)} title="Create event / career fair" wide>
-        <p className="mb-3 text-sm text-[#6b6b6b]">
-          Events land on the calendar and block meeting slots in the selected window. Upload a schedule
-          and invite teammates to coschedule.
-        </p>
+      <Modal open={eventOpen} onClose={() => setEventOpen(false)} title="Create event" wide>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Label>Event name *</Label>
             <Input
               value={eventForm.name}
               onChange={(e) => setEventForm({ ...eventForm, name: e.target.value })}
-              placeholder="Career Fair · Delhi University"
             />
           </div>
           <div>
@@ -897,63 +885,13 @@ function MeetingsPageInner() {
               />
             </div>
           </div>
-          <div className="sm:col-span-2">
-            <Label>Upload schedule (career fair / timetable)</Label>
-            <Input
-              type="file"
-              accept=".csv,.xlsx,.xls,.pdf,.png,.jpg"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) setEventForm({ ...eventForm, scheduleFileName: f.name });
-              }}
-            />
-            {eventForm.scheduleFileName && (
-              <p className="mt-1 text-xs text-[#6b6b6b]">Selected: {eventForm.scheduleFileName}</p>
-            )}
-          </div>
-          <div className="sm:col-span-2">
-            <Label>Invite teammates to coschedule</Label>
-            <div className="mt-1 max-h-36 space-y-1 overflow-y-auto rounded-xl border border-[#e5e5e5] p-2">
-              {members
-                .filter((m) => m.role === "B2B Member" || m.role === "B2B Lead")
-                .slice(0, 20)
-                .map((m) => {
-                  const checked = eventForm.inviteMemberIds.includes(m.id);
-                  return (
-                    <label key={m.id} className="flex min-h-10 cursor-pointer items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() =>
-                          setEventForm({
-                            ...eventForm,
-                            inviteMemberIds: checked
-                              ? eventForm.inviteMemberIds.filter((id) => id !== m.id)
-                              : [...eventForm.inviteMemberIds, m.id],
-                          })
-                        }
-                      />
-                      {m.name}
-                      <span className="text-xs text-[#6b6b6b]">{m.email}</span>
-                    </label>
-                  );
-                })}
-            </div>
-          </div>
-          <div className="sm:col-span-2">
-            <Label>Notes</Label>
-            <Textarea
-              value={eventForm.notes}
-              onChange={(e) => setEventForm({ ...eventForm, notes: e.target.value })}
-            />
-          </div>
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="outline" onClick={() => setEventOpen(false)}>
             Cancel
           </Button>
           <Button
-            disabled={!eventForm.name || !eventForm.startTime || !eventForm.endTime}
+            disabled={!eventForm.name}
             onClick={() => {
               createEvent({
                 name: eventForm.name,
@@ -968,17 +906,6 @@ function MeetingsPageInner() {
               });
               setEventOpen(false);
               setTab("events");
-              setEventForm({
-                name: "",
-                date: new Date().toISOString().slice(0, 10),
-                startTime: "09:00",
-                endTime: "17:00",
-                location: "",
-                notes: "",
-                type: "Career Fair",
-                inviteMemberIds: [],
-                scheduleFileName: "",
-              });
             }}
           >
             Add to calendar
@@ -986,12 +913,7 @@ function MeetingsPageInner() {
         </div>
       </Modal>
 
-      <Modal
-        open={!!manageEventId}
-        onClose={() => setManageEventId(null)}
-        title="Manage event"
-        wide
-      >
+      <Modal open={!!manageEventId} onClose={() => setManageEventId(null)} title="Event details" wide>
         {(() => {
           const ev = events.find((x) => x.id === manageEventId);
           if (!ev) return null;
@@ -1004,46 +926,32 @@ function MeetingsPageInner() {
                 </div>
               </div>
               <div>
-                <Label>Upload / replace schedule</Label>
+                <Label>Upload schedule</Label>
                 <Input
                   type="file"
-                  accept=".csv,.xlsx,.xls,.pdf,.png,.jpg"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
                     if (f && manageEventId) uploadEventSchedule(manageEventId, f.name);
                   }}
                 />
-                {ev.scheduleFileName && (
-                  <p className="mt-1 text-xs text-[#6b6b6b]">Current: {ev.scheduleFileName}</p>
-                )}
               </div>
               <div>
-                <Label>Upload event-wise data</Label>
+                <Label>Event data</Label>
                 <Input
                   type="file"
-                  accept=".csv,.xlsx,.xls,.pdf,.png,.jpg"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
                     if (f && manageEventId) uploadEventData(manageEventId, f.name, "attendance");
                   }}
                 />
-                {ev.eventData?.length > 0 && (
-                  <ul className="mt-2 space-y-1 text-xs text-[#6b6b6b]">
-                    {ev.eventData.map((d) => (
-                      <li key={d.id}>
-                        {d.name} · {d.kind}
-                      </li>
-                    ))}
-                  </ul>
-                )}
               </div>
               <div>
-                <Label>Invite more teammates</Label>
+                <Label>Invite teammates</Label>
                 <div className="mt-1 max-h-32 space-y-1 overflow-y-auto rounded-xl border border-[#e5e5e5] p-2">
                   {members
                     .filter((m) => m.role === "B2B Member" || m.role === "B2B Lead")
-                    .filter((m) => !ev.invites.some((i) => i.memberId === m.id))
-                    .slice(0, 16)
+                    .filter((m) => !ev.invites?.some((i) => i.memberId === m.id))
+                    .slice(0, 12)
                     .map((m) => {
                       const checked = invitePick.includes(m.id);
                       return (
@@ -1071,87 +979,19 @@ function MeetingsPageInner() {
                     setInvitePick([]);
                   }}
                 >
-                  Send coschedule invites
+                  Send invites
                 </Button>
               </div>
-              {ev.invites?.length > 0 && (
-                <div className="text-xs text-[#6b6b6b]">
-                  Invited: {ev.invites.map((i) => `${i.name} (${i.status})`).join(" · ")}
-                </div>
-              )}
             </div>
           );
         })()}
       </Modal>
 
-      <Modal open={dupOpen} onClose={() => setDupOpen(false)} title="Possible existing consultant" wide>
-        <p className="mb-3 text-sm text-[#6b6b6b]">
-          Duplicate detection matched possible records. Choose an action.
-        </p>
-        <div className="space-y-2">
-          {dups.map((d) => {
-            const owner = members.find((m) => m.id === d.ownerId);
-            return (
-              <div
-                key={d.id}
-                className="flex flex-wrap items-center justify-between gap-2 border border-[#e5e5e5] p-3"
-              >
-                <div>
-                  <div className="text-sm font-semibold">{d.name}</div>
-                  <div className="text-xs text-[#6b6b6b]">
-                    Owner: {owner?.name} · {d.phone} · {d.email}
-                  </div>
-                  <Badge tone={StatusTone(d.status)}>{d.status}</Badge>
-                </div>
-                <div className="flex gap-1">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      if (pendingCreate?.meetingId) {
-                        linkMeetingToConsultant(pendingCreate.meetingId, d.id);
-                      }
-                      setDupOpen(false);
-                      setPendingCreate(null);
-                    }}
-                  >
-                    Use Existing
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      const other = dups.find((x) => x.id !== d.id) || consultants[0];
-                      if (other) requestMerge(d.id, other.id, "Possible duplicate from meeting create");
-                      setDupOpen(false);
-                    }}
-                  >
-                    Request Merge
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <div className="mt-4 flex justify-end">
-          <Button
-            onClick={() => {
-              if (pendingCreate) createConsultant({ ...pendingCreate, force: true });
-              setDupOpen(false);
-              setPendingCreate(null);
-            }}
-          >
-            Create New
-          </Button>
-        </div>
-      </Modal>
-
-      <Modal open={!!rescheduleId} onClose={() => setRescheduleId(null)} title="Reschedule meeting">
+      <Modal open={!!rescheduleId} onClose={() => setRescheduleId(null)} title="Reschedule">
         <RescheduleForm
           onSubmit={(date, time) => {
             if (!rescheduleId) return;
-            const ok = rescheduleMeeting(rescheduleId, date, time);
-            if (ok) setRescheduleId(null);
+            if (rescheduleMeeting(rescheduleId, date, time)) setRescheduleId(null);
           }}
         />
       </Modal>
@@ -1161,15 +1001,15 @@ function MeetingsPageInner() {
 
 function RescheduleForm({ onSubmit }: { onSubmit: (date: string, time: string) => void }) {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [time, setTime] = useState("11:00");
+  const [time, setTime] = useState("10:00");
   return (
     <div className="space-y-3">
       <div>
-        <Label>New date</Label>
+        <Label>Date</Label>
         <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       </div>
       <div>
-        <Label>New time</Label>
+        <Label>Time</Label>
         <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
       </div>
       <Button onClick={() => onSubmit(date, time)}>Save</Button>
@@ -1179,7 +1019,7 @@ function RescheduleForm({ onSubmit }: { onSubmit: (date: string, time: string) =
 
 export default function MeetingsPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-sm text-[#6b6b6b]">Loading…</div>}>
+    <Suspense fallback={<div className="p-8 text-sm text-[#6b6b6b]">Loading…</div>}>
       <MeetingsPageInner />
     </Suspense>
   );

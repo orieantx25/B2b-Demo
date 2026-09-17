@@ -94,6 +94,11 @@ interface Store extends ReturnType<typeof buildInitial> {
   sendWo: (mouId: string) => void;
   markSigned: (mouId: string) => void;
   submitReworkDocs: (mouId: string) => void;
+  /** Ops-only post-approval milestones (visible on B2B journey) */
+  markOpsMilestone: (
+    mouId: string,
+    milestone: "financeApproved" | "draftShared" | "sentToClient" | "signed"
+  ) => void;
   requestUtm: (consultantId: string) => void;
   createChildUtm: (consultantId: string, parentUtmId: string) => void;
   createCoupon: (consultantId: string, code: string) => void;
@@ -116,6 +121,9 @@ interface Store extends ReturnType<typeof buildInitial> {
     organization: string;
     designation?: string;
   }) => string;
+  addReportDigestEmail: (email: string) => void;
+  removeReportDigestEmail: (email: string) => void;
+  sendWeeklyConsolidatedReport: () => void;
 }
 
 function buildInitial() {
@@ -139,6 +147,7 @@ function buildInitial() {
     activities: seed.activities,
     weeklyReports: seed.weeklyReports,
     userTargets: seed.userTargets,
+    reportDigestEmails: [] as string[],
     toasts: [] as ToastItem[],
   };
 }
@@ -636,31 +645,70 @@ export const useAppStore = create<Store>()(
   },
 
   submitReworkDocs: (mouId) => {
-    set((s) => ({
-      mous: s.mous.map((m) =>
-        m.id === mouId
-          ? { ...m, status: "Verification", reworkItems: undefined, reworkMessage: undefined, updatedAt: new Date().toISOString() }
-          : m
-      ),
-    }));
-    get().addToast({ title: "Documents resubmitted", description: "Returned to verification", variant: "success" });
+    set((s) => {
+      const mou = s.mous.find((m) => m.id === mouId);
+      if (!mou) return s;
+      const activities = [...s.activities];
+      pushActivity(activities, {
+        consultantId: mou.consultantId,
+        type: "rework",
+        title: "Rework resubmitted",
+        description: "Returned to MOU / WO queue for verification",
+        actorId: s.currentUserId,
+      });
+      return {
+        mous: s.mous.map((m) =>
+          m.id === mouId
+            ? {
+                ...m,
+                status: "Verification",
+                reworkItems: undefined,
+                reworkMessage: undefined,
+                verifiedAt: undefined,
+                updatedAt: new Date().toISOString(),
+              }
+            : m
+        ),
+        consultants: s.consultants.map((c) =>
+          c.id === mou.consultantId ? { ...c, mouStatus: "Verification" } : c
+        ),
+        activities,
+      };
+    });
+    get().addToast({
+      title: "Documents resubmitted",
+      description: "Back in MOU queue · Verification",
+      variant: "success",
+    });
   },
 
   approveMou: (mouId) => {
+    const now = new Date().toISOString();
     set((s) => {
       const mou = s.mous.find((m) => m.id === mouId)!;
       const activities = [...s.activities];
       pushActivity(activities, {
         consultantId: mou.consultantId,
         type: "mou",
-        title: "MOU approved",
-        description: mou.commercialType === "Standard" ? "Standard — streamlined" : "Non-standard approved",
+        title: "MOU approved · sent to legal",
+        description:
+          mou.commercialType === "Standard" ? "Standard — auto-marked sent to legal" : "Non-standard approved · sent to legal",
         actorId: s.currentUserId,
       });
       return {
         mous: s.mous.map((m) =>
           m.id === mouId
-            ? { ...m, status: "Approved", approvedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+            ? {
+                ...m,
+                status: "Approved",
+                approvedAt: now,
+                updatedAt: now,
+                legalStatus: m.legalStatus === "N/A" ? "In Review" : "In Review",
+                opsTrack: {
+                  ...m.opsTrack,
+                  sentToLegalAt: now,
+                },
+              }
             : m
         ),
         consultants: s.consultants.map((c) =>
@@ -669,7 +717,109 @@ export const useAppStore = create<Store>()(
         activities,
       };
     });
-    get().addToast({ title: "MOU approved", variant: "success" });
+    get().addToast({
+      title: "MOU approved",
+      description: "Auto-marked: MoU sent to legal. Continue in Approved tracking.",
+      variant: "success",
+    });
+  },
+
+  markOpsMilestone: (mouId, milestone) => {
+    const now = new Date().toISOString();
+    const mou = get().mous.find((m) => m.id === mouId);
+    if (!mou) return;
+
+    if (milestone === "signed") {
+      get().markSigned(mouId);
+      set((s) => ({
+        mous: s.mous.map((m) =>
+          m.id === mouId
+            ? {
+                ...m,
+                opsTrack: { ...m.opsTrack, sentToLegalAt: m.opsTrack?.sentToLegalAt || m.approvedAt },
+              }
+            : m
+        ),
+      }));
+      return;
+    }
+
+    if (milestone === "draftShared" && !mou.opsTrack?.financeApprovedAt) {
+      get().addToast({ title: "Approve finance first", variant: "error" });
+      return;
+    }
+    if (milestone === "sentToClient" && !mou.opsTrack?.draftSharedAt) {
+      get().addToast({ title: "Mark draft shared first", variant: "error" });
+      return;
+    }
+
+    set((s) => {
+      const current = s.mous.find((m) => m.id === mouId)!;
+      let status = current.status;
+      let financeStatus = current.financeStatus;
+      let woNumber = current.woNumber;
+      let woGeneratedAt = current.woGeneratedAt;
+      let woSentAt = current.woSentAt;
+      const opsTrack = {
+        ...current.opsTrack,
+        sentToLegalAt: current.opsTrack?.sentToLegalAt || current.approvedAt,
+      };
+
+      if (milestone === "financeApproved") {
+        opsTrack.financeApprovedAt = now;
+        financeStatus = "Approved";
+        if (!woNumber) {
+          woNumber = `WO-2026-${2000 + s.mous.length}`;
+          woGeneratedAt = now;
+          status = "WO Generated";
+        }
+      }
+      if (milestone === "draftShared") {
+        opsTrack.draftSharedAt = now;
+      }
+      if (milestone === "sentToClient") {
+        opsTrack.sentToClientAt = now;
+        woSentAt = now;
+        status = "Awaiting Signature";
+      }
+
+      const labels = {
+        financeApproved: "Approved by finance",
+        draftShared: "Draft shared",
+        sentToClient: "WO / MoU sent to client",
+      } as const;
+
+      const activities = [...s.activities];
+      pushActivity(activities, {
+        consultantId: current.consultantId,
+        type: "mou",
+        title: labels[milestone],
+        description: "Ops milestone",
+        actorId: s.currentUserId,
+      });
+
+      return {
+        mous: s.mous.map((m) =>
+          m.id === mouId
+            ? {
+                ...m,
+                status,
+                financeStatus,
+                woNumber,
+                woGeneratedAt,
+                woSentAt,
+                opsTrack,
+                updatedAt: now,
+              }
+            : m
+        ),
+        consultants: s.consultants.map((c) =>
+          c.id === current.consultantId ? { ...c, mouStatus: status } : c
+        ),
+        activities,
+      };
+    });
+    get().addToast({ title: "Milestone updated", variant: "success" });
   },
 
   generateWo: (mouId) => {
@@ -1013,6 +1163,44 @@ export const useAppStore = create<Store>()(
     });
     return data.name;
   },
+
+  addReportDigestEmail: (email) => {
+    const normalized = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+      get().addToast({ title: "Invalid email", variant: "error" });
+      return;
+    }
+    const existing = get().reportDigestEmails;
+    if (existing.includes(normalized)) {
+      get().addToast({ title: "Email already added", variant: "error" });
+      return;
+    }
+    set({ reportDigestEmails: [...existing, normalized] });
+    get().addToast({ title: "Email added", description: normalized, variant: "success" });
+  },
+
+  removeReportDigestEmail: (email) => {
+    set((s) => ({
+      reportDigestEmails: s.reportDigestEmails.filter((e) => e !== email),
+    }));
+  },
+
+  sendWeeklyConsolidatedReport: () => {
+    const emails = get().reportDigestEmails;
+    if (emails.length === 0) {
+      get().addToast({
+        title: "No recipients",
+        description: "Add at least one email for the weekly digest.",
+        variant: "error",
+      });
+      return;
+    }
+    get().addToast({
+      title: "Weekly report queued",
+      description: `Consolidated digest will send to ${emails.length} address${emails.length === 1 ? "" : "es"} (simulated).`,
+      variant: "success",
+    });
+  },
 }),
     {
       name: "ugsot-b2b-demo",
@@ -1022,6 +1210,7 @@ export const useAppStore = create<Store>()(
       partialize: (s) => ({
         workspace: s.workspace,
         userTargets: s.userTargets,
+        reportDigestEmails: s.reportDigestEmails,
       }),
     }
   )

@@ -27,6 +27,8 @@ import type { DocType } from "@/types";
 import type { GeoTag } from "@/lib/geo";
 import { ArrowLeft, MoreHorizontal } from "lucide-react";
 import { LegacyPortalModal, useLegacyPortal } from "@/components/legacy-portal-modal";
+import { CreateCouponModal } from "@/components/create-coupon-modal";
+import { CreateUtmModal } from "@/components/create-utm-modal";
 
 const TAB_KEYS = [
   { value: "overview", label: "Overview" },
@@ -60,6 +62,7 @@ export default function Consultant360() {
   const sendMarketingMaterial = useAppStore((s) => s.sendMarketingMaterial);
   const simulateFirstLead = useAppStore((s) => s.simulateFirstLead);
   const uploadDocument = useAppStore((s) => s.uploadDocument);
+  const submitReworkDocs = useAppStore((s) => s.submitReworkDocs);
   const completeMeeting = useAppStore((s) => s.completeMeeting);
   const attachMeetingPhoto = useAppStore((s) => s.attachMeetingPhoto);
 
@@ -74,6 +77,8 @@ export default function Consultant360() {
   const [comments, setComments] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [cardxOpen, setCardxOpen] = useState(false);
+  const [utmPipOpen, setUtmPipOpen] = useState(false);
+  const [couponPipOpen, setCouponPipOpen] = useState(false);
   const [photoMeetingId, setPhotoMeetingId] = useState<string | null>(null);
   const [photoDraft, setPhotoDraft] = useState<{ photoUrl: string; geo: GeoTag } | null>(null);
   const [completePromptId, setCompletePromptId] = useState<string | null>(null);
@@ -160,27 +165,14 @@ export default function Consultant360() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() =>
-                legacy.openLegacy({
-                  action: "utm",
-                  consultantCode: c.consultantCode,
-                  consultantName: c.name,
-                  counsellorCode: c.existingUtmCode,
-                })
-              }
+              onClick={() => setUtmPipOpen(true)}
             >
-              Request UTM
+              Create UTM
             </Button>
             <Button
               size="sm"
               variant="outline"
-              onClick={() =>
-                legacy.openLegacy({
-                  action: "coupon",
-                  consultantCode: c.consultantCode,
-                  consultantName: c.name,
-                })
-              }
+              onClick={() => setCouponPipOpen(true)}
             >
               Create Coupon
             </Button>
@@ -208,26 +200,17 @@ export default function Consultant360() {
             type="button"
             className="w-full rounded-xl px-3 py-3 text-left text-sm font-semibold hover:bg-[#fafafa]"
             onClick={() => {
-              legacy.openLegacy({
-                action: "utm",
-                consultantCode: c.consultantCode,
-                consultantName: c.name,
-                counsellorCode: c.existingUtmCode,
-              });
+              setUtmPipOpen(true);
               setMoreOpen(false);
             }}
           >
-            Request UTM
+            Create UTM
           </button>
           <button
             type="button"
             className="w-full rounded-xl px-3 py-3 text-left text-sm font-semibold hover:bg-[#fafafa]"
             onClick={() => {
-              legacy.openLegacy({
-                action: "coupon",
-                consultantCode: c.consultantCode,
-                consultantName: c.name,
-              });
+              setCouponPipOpen(true);
               setMoreOpen(false);
             }}
           >
@@ -429,9 +412,19 @@ export default function Consultant360() {
               <div className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                 <div className="font-semibold">Action required</div>
                 <p className="mt-1">{reworkMou.reworkMessage || "Rework requested by Operations."}</p>
-                <Button size="sm" className="mt-2" onClick={() => setTab("documents")}>
-                  Fix rework — upload docs
-                </Button>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setTab("documents")}>
+                    Upload docs
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      submitReworkDocs(reworkMou.id);
+                    }}
+                  >
+                    Submit rework to Ops queue
+                  </Button>
+                </div>
               </div>
             )}
             {cMous.map((m) => (
@@ -472,23 +465,12 @@ export default function Consultant360() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold">UTMs</h3>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    legacy.openLegacy({
-                      action: "utm",
-                      consultantCode: c.consultantCode,
-                      consultantName: c.name,
-                      counsellorCode: c.existingUtmCode,
-                    })
-                  }
-                >
-                  Request UTM
+                <Button size="sm" variant="outline" onClick={() => setUtmPipOpen(true)}>
+                  Create UTM
                 </Button>
               </div>
               <p className="text-xs text-[#6b6b6b]">
-                Create UTM opens the Admin Portal (synced records stay here). Source: Existing UTM System.
+                Create UTM in-app; short URL and params hand off to the Admin Portal stub.
               </p>
               {cUtms.length === 0 ? (
                 <EmptyState title="No UTMs yet" description="Request a UTM to map counsellor codes." />
@@ -529,24 +511,14 @@ export default function Consultant360() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold">Coupons</h3>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    legacy.openLegacy({
-                      action: "coupon",
-                      consultantCode: c.consultantCode,
-                      consultantName: c.name,
-                    })
-                  }
-                >
+                <Button size="sm" variant="outline" onClick={() => setCouponPipOpen(true)}>
                   Create Coupon
                 </Button>
               </div>
               {cCoupons.length === 0 ? (
                 <EmptyState
                   title="No coupons yet"
-                  description="Synced coupons appear here after Admin Portal create."
+                  description="Create a coupon mapped to this consultant."
                 />
               ) : (
                 cCoupons.map((cp) => {
@@ -591,12 +563,17 @@ export default function Consultant360() {
         </TabsContent>
 
         <TabsContent value="documents">
-          <div className="mb-3">
+          <div className="mb-3 flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={() => setCardxOpen(true)}>
               Scan card
             </Button>
+            {reworkMou && (
+              <Button size="sm" onClick={() => submitReworkDocs(reworkMou.id)}>
+                Submit rework to Ops queue
+              </Button>
+            )}
             {visitingCard && (
-              <p className="mt-2 text-xs text-[#6b6b6b]">
+              <p className="mt-2 w-full text-xs text-[#6b6b6b]">
                 Visiting Card on file · {visitingCard.verification || visitingCard.status}
               </p>
             )}
@@ -815,6 +792,16 @@ export default function Consultant360() {
         consultantName={legacy.consultantName}
         counsellorCode={legacy.counsellorCode}
         parentUtmCode={legacy.parentUtmCode}
+      />
+      <CreateUtmModal
+        open={utmPipOpen}
+        onClose={() => setUtmPipOpen(false)}
+        consultantId={c.id}
+      />
+      <CreateCouponModal
+        open={couponPipOpen}
+        onClose={() => setCouponPipOpen(false)}
+        consultantId={c.id}
       />
     </div>
   );

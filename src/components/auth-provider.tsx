@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { AppRole } from "@/lib/auth/roles";
+import { DEMO_AUTH_DISABLED, DEMO_USER } from "@/lib/auth/demo";
 import { useAppStore } from "@/store/app-store";
 import { fromLegacyRole, legacyMemberRole } from "@/lib/auth/roles";
 
@@ -44,6 +45,7 @@ function readCookie(name: string): string | null {
 }
 
 function readBootstrapUser(): AuthUser | null {
+  if (DEMO_AUTH_DISABLED) return { ...DEMO_USER };
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw) as AuthUser;
@@ -74,8 +76,8 @@ function readBootstrapUser(): AuthUser | null {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<AuthUser | null>(DEMO_AUTH_DISABLED ? { ...DEMO_USER } : null);
+  const [loading, setLoading] = useState(!DEMO_AUTH_DISABLED);
   const setPersona = useAppStore((s) => s.setPersona);
 
   const syncStoreUser = useCallback(
@@ -87,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const store = useAppStore.getState();
       const exists = store.members.some((m) => m.id === u.id);
-      if (!exists && u.id !== "session") {
+      if (!exists) {
         useAppStore.setState({
           members: [
             {
@@ -101,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ],
           currentUserId: u.id,
         });
-      } else if (u.id !== "session") {
+      } else {
         useAppStore.setState({ currentUserId: u.id });
       }
     },
@@ -109,7 +111,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const refresh = useCallback(async () => {
-    // Instant UI from cookie / sessionStorage so workspace chips appear on Vercel
+    if (DEMO_AUTH_DISABLED) {
+      const demo = { ...DEMO_USER };
+      setUser(demo);
+      syncStoreUser(demo);
+      setLoading(false);
+      return;
+    }
+
     const boot = readBootstrapUser();
     if (boot) {
       setUser(boot);
@@ -143,6 +152,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [syncStoreUser]);
 
   const logout = useCallback(async () => {
+    if (DEMO_AUTH_DISABLED) {
+      // Login removed from product — stay in app as demo Super Admin
+      window.location.href = "/b2b";
+      return;
+    }
     try {
       sessionStorage.removeItem(STORAGE_KEY);
     } catch {

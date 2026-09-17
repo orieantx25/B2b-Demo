@@ -1,175 +1,196 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useState } from "react";
 import { useAppStore } from "@/store/app-store";
-import { Badge, Button, Label, Modal, PageHeader, Select, StatusTone, Textarea } from "@/components/ui";
-import { formatDate } from "@/lib/utils";
+import { Badge, Button, EmptyState, Modal, PageHeader, StatusTone } from "@/components/ui";
+import { cn } from "@/lib/utils";
 
 export default function OwnershipPage() {
-  const ownership = useAppStore((s) => s.ownership);
   const consultants = useAppStore((s) => s.consultants);
   const members = useAppStore((s) => s.members);
-  const mergeRequests = useAppStore((s) => s.mergeRequests);
   const transferOwnership = useAppStore((s) => s.transferOwnership);
-  const resolveMerge = useAppStore((s) => s.resolveMerge);
   const persona = useAppStore((s) => s.persona);
-
-  const [open, setOpen] = useState(false);
-  const [consultantId, setConsultantId] = useState("");
-  const [newOwnerId, setNewOwnerId] = useState("");
-  const [reason, setReason] = useState("Admin transfer");
-  const [comments, setComments] = useState("");
-
   const canTransfer = persona === "admin" || persona === "operations";
+
+  const [spocId, setSpocId] = useState<string | null>(null);
+  const [transferConsultantId, setTransferConsultantId] = useState<string | null>(null);
+  const [pickOwnerId, setPickOwnerId] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const spocs = useMemo(() => {
+    const b2b = members.filter((m) => m.role === "B2B Member" || m.role === "B2B Lead");
+    return b2b
+      .map((m) => ({
+        ...m,
+        count: consultants.filter((c) => c.ownerId === m.id).length,
+      }))
+      .filter((m) => m.count > 0)
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }, [members, consultants]);
+
+  const underSpoc = useMemo(
+    () => (spocId ? consultants.filter((c) => c.ownerId === spocId).sort((a, b) => a.name.localeCompare(b.name)) : []),
+    [consultants, spocId]
+  );
+
+  const b2bMembers = useMemo(
+    () =>
+      members
+        .filter((m) => m.role === "B2B Member" || m.role === "B2B Lead")
+        .filter((m) => m.id !== underSpoc.find((c) => c.id === transferConsultantId)?.ownerId)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [members, underSpoc, transferConsultantId]
+  );
+
+  const transferConsultant = transferConsultantId
+    ? consultants.find((c) => c.id === transferConsultantId)
+    : null;
+  const newOwner = pickOwnerId ? members.find((m) => m.id === pickOwnerId) : null;
+  const selectedSpoc = spocId ? members.find((m) => m.id === spocId) : null;
+
+  const resetTransfer = () => {
+    setTransferConsultantId(null);
+    setPickOwnerId(null);
+    setConfirmOpen(false);
+  };
 
   return (
     <div className="animate-in pb-16">
       <PageHeader
         title="Ownership"
-        subtitle="History never deleted. Relationship survives SPOC changes."
-        actions={
-          canTransfer ? (
-            <Button onClick={() => setOpen(true)}>Transfer ownership</Button>
-          ) : undefined
-        }
+        subtitle="SPOC → their consultants → transfer with confirmation."
       />
 
-      <section className="mb-6 card-surface">
-        <div className="border-b px-4 py-3 text-sm font-semibold">Merge requests</div>
-        <ul className="divide-y divide-[#e5e5e5]">
-          {mergeRequests.map((m) => {
-            const p = consultants.find((c) => c.id === m.primaryId);
-            const d = consultants.find((c) => c.id === m.duplicateId);
-            return (
-              <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
-                <div>
-                  <div className="font-medium">
-                    {p?.name} ← {d?.name}
-                  </div>
-                  <div className="text-xs text-[#6b6b6b]">{m.reason}</div>
+      {!spocId ? (
+        spocs.length === 0 ? (
+          <EmptyState title="No SPOCs with consultants" description="Assign owners from Consultant Master." />
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {spocs.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setSpocId(s.id)}
+                className="card-surface flex min-h-[88px] flex-col items-start justify-between p-4 text-left transition hover:border-[#e31c24]"
+              >
+                <div className="text-sm font-semibold text-[#111]">{s.name}</div>
+                <div className="mt-1 text-xs text-[#6b6b6b]">
+                  {s.role} · {s.region}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge tone={StatusTone(m.status)}>{m.status}</Badge>
-                  {m.status === "Pending" && canTransfer && (
-                    <>
-                      <Button size="sm" onClick={() => resolveMerge(m.id, true)}>
-                        Approve
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => resolveMerge(m.id, false)}>
-                        Reject
-                      </Button>
-                    </>
-                  )}
+                <div className="mt-3 text-xs font-semibold text-[#e31c24]">
+                  {s.count} consultant{s.count === 1 ? "" : "s"} →
                 </div>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-
-      <div className="space-y-2 sm:hidden">
-        {ownership.slice(0, 60).map((o) => {
-          const c = consultants.find((x) => x.id === o.consultantId);
-          return (
-            <Link
-              key={o.id}
-              href={`/consultants/${o.consultantId}`}
-              className="block card-surface p-3.5"
-            >
-              <div className="text-sm font-semibold">{c?.name}</div>
-              <div className="mt-0.5 text-xs text-[#6b6b6b]">
-                {o.ownerName}
-                {o.toDate ? "" : " · current"}
-              </div>
-              <div className="mt-2 text-xs text-[#6b6b6b]">
-                {formatDate(o.fromDate)}
-                {o.toDate ? ` → ${formatDate(o.toDate)}` : ""}
-                {o.reason ? ` · ${o.reason}` : ""}
-              </div>
-            </Link>
-          );
-        })}
-      </div>
-
-      <div className="hidden overflow-x-auto card-surface sm:block">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-[#f6f6f6] text-xs text-[#6b6b6b]">
-            <tr>
-              <th className="px-3 py-2">Consultant</th>
-              <th className="px-3 py-2">Owner</th>
-              <th className="px-3 py-2">From</th>
-              <th className="px-3 py-2">To</th>
-              <th className="px-3 py-2">Reason</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ownership.slice(0, 60).map((o) => {
-              const c = consultants.find((x) => x.id === o.consultantId);
-              return (
-                <tr key={o.id} className="border-t border-[#e5e5e5]">
-                  <td className="px-3 py-2">
-                    <Link href={`/consultants/${o.consultantId}`} className="hover:underline">
-                      {c?.name}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2">{o.ownerName}</td>
-                  <td className="px-3 py-2 text-xs">{formatDate(o.fromDate)}</td>
-                  <td className="px-3 py-2 text-xs">{o.toDate ? formatDate(o.toDate) : "Current"}</td>
-                  <td className="px-3 py-2 text-xs">{o.reason}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <Modal open={open} onClose={() => setOpen(false)} title="Transfer ownership">
-        <div className="space-y-3">
-          <div>
-            <Label>Consultant</Label>
-            <Select value={consultantId} onChange={(e) => setConsultantId(e.target.value)}>
-              <option value="">Select…</option>
-              {consultants.slice(0, 80).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
+              </button>
+            ))}
           </div>
-          <div>
-            <Label>New owner</Label>
-            <Select value={newOwnerId} onChange={(e) => setNewOwnerId(e.target.value)}>
-              <option value="">Select…</option>
-              {members
-                .filter((m) => m.role === "B2B Member" || m.role === "B2B Lead")
-                .map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-            </Select>
-          </div>
-          <div>
-            <Label>Reason</Label>
-            <Select value={reason} onChange={(e) => setReason(e.target.value)}>
-              <option>SPOC change</option>
-              <option>Admin transfer</option>
-              <option>Region realignment</option>
-            </Select>
-          </div>
-          <div>
-            <Label>Comments</Label>
-            <Textarea value={comments} onChange={(e) => setComments(e.target.value)} />
-          </div>
-          <Button
-            disabled={!consultantId || !newOwnerId}
+        )
+      ) : (
+        <div>
+          <button
+            type="button"
             onClick={() => {
-              transferOwnership(consultantId, newOwnerId, reason, comments);
-              setOpen(false);
+              setSpocId(null);
+              resetTransfer();
+            }}
+            className="mb-4 text-sm font-semibold text-[#e31c24]"
+          >
+            ← All SPOCs
+          </button>
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">{selectedSpoc?.name}</h2>
+            <p className="text-sm text-[#6b6b6b]">{underSpoc.length} consultants</p>
+          </div>
+          <div className="space-y-2">
+            {underSpoc.map((c) => (
+              <div key={c.id} className="card-surface flex flex-wrap items-center justify-between gap-3 p-3.5">
+                <div className="min-w-0">
+                  <Link href={`/consultants/${c.id}`} className="text-sm font-semibold hover:text-[#e31c24]">
+                    {c.name}
+                  </Link>
+                  <div className="text-xs text-[#6b6b6b]">
+                    {c.organization} · {c.consultantCode}
+                  </div>
+                  <div className="mt-1">
+                    <Badge tone={StatusTone(c.status)}>{c.status}</Badge>
+                  </div>
+                </div>
+                {canTransfer && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setTransferConsultantId(c.id);
+                      setPickOwnerId(null);
+                    }}
+                  >
+                    Transfer ownership
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Pick new B2B owner */}
+      <Modal
+        open={!!transferConsultantId && !confirmOpen}
+        onClose={resetTransfer}
+        title="Transfer ownership"
+        wide
+      >
+        <p className="mb-3 text-sm text-[#6b6b6b]">
+          Select a B2B team member as the new owner of{" "}
+          <strong>{transferConsultant?.name}</strong>.
+        </p>
+        <div className="max-h-64 space-y-1 overflow-y-auto rounded-xl border border-[#e5e5e5]">
+          {b2bMembers.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => setPickOwnerId(m.id)}
+              className={cn(
+                "flex w-full flex-col border-b border-[#e5e5e5] px-3 py-2.5 text-left text-sm last:border-0 hover:bg-[#fafafa]",
+                pickOwnerId === m.id && "bg-[#fdecec]"
+              )}
+            >
+              <span className="font-semibold">{m.name}</span>
+              <span className="text-xs text-[#6b6b6b]">
+                {m.role} · {m.region}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="outline" onClick={resetTransfer}>
+            Cancel
+          </Button>
+          <Button disabled={!pickOwnerId} onClick={() => setConfirmOpen(true)}>
+            Continue
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Confirm */}
+      <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title="Confirm transfer">
+        <p className="text-sm text-[#111]">
+          Are you trying to transfer ownership of{" "}
+          <strong>{transferConsultant?.name}</strong> to <strong>{newOwner?.name}</strong>?
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+            No
+          </Button>
+          <Button
+            onClick={() => {
+              if (transferConsultantId && pickOwnerId) {
+                transferOwnership(transferConsultantId, pickOwnerId, "SPOC change");
+                resetTransfer();
+              }
             }}
           >
-            Confirm transfer
+            Yes — transfer ownership
           </Button>
         </div>
       </Modal>

@@ -293,6 +293,22 @@ export function generateSeedData() {
       signedAt: c.mouStatus === "Signed" ? addDays(createdAt, 8) : undefined,
       reworkItems: c.mouStatus === "Rework" ? ["GST"] : undefined,
       reworkMessage: c.mouStatus === "Rework" ? "Please upload the latest GST certificate." : undefined,
+      opsTrack: ["Approved", "WO Generated", "WO Sent", "Awaiting Signature", "Signed", "Legal Review", "Finance Approval"].includes(
+        c.mouStatus
+      )
+        ? {
+            sentToLegalAt: addDays(createdAt, 3),
+            financeApprovedAt: ["WO Generated", "WO Sent", "Awaiting Signature", "Signed"].includes(c.mouStatus)
+              ? addDays(createdAt, 4)
+              : undefined,
+            draftSharedAt: ["WO Sent", "Awaiting Signature", "Signed"].includes(c.mouStatus)
+              ? addDays(createdAt, 5)
+              : undefined,
+            sentToClientAt: ["WO Sent", "Awaiting Signature", "Signed"].includes(c.mouStatus)
+              ? addDays(createdAt, 5)
+              : undefined,
+          }
+        : undefined,
     });
   });
 
